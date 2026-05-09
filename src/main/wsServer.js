@@ -87,6 +87,7 @@ function handleIncoming(msg) {
       channel_name: channel?.name || null,
       reactions: [],
     });
+    maybeNotify(record, sender);
   } else if (type === 'EDIT') {
     if (!msg.id) return;
     db.editMessage(msg.id, msg.content || '');
@@ -122,6 +123,43 @@ function handleIncoming(msg) {
 function notifyRenderer(event, data) {
   BrowserWindow.getAllWindows().forEach(w => {
     if (!w.isDestroyed()) w.webContents.send(event, data);
+  });
+}
+
+function maybeNotify(record, sender) {
+  const wins = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed());
+  if (wins.some(w => w.isFocused())) return;
+
+  const settings = db.getAllSettings ? db.getAllSettings() : {};
+  if (settings.notificationsEnabled === false) return;
+
+  const profile = db.getProfile();
+  if (profile?.status === 'dnd') return;
+
+  let body;
+  if (record.type === 'file') {
+    try {
+      body = `📎 ${JSON.parse(record.content).name}`;
+    } catch {
+      body = '📎 Archivo';
+    }
+  } else {
+    body = String(record.content || '').slice(0, 80);
+  }
+
+  const chatId = record.channel_id || record.from_uuid;
+  const chatType = record.channel_id ? 'channel' : 'dm';
+
+  require('./notifier').notify({
+    title: sender.name || 'NeuroChat',
+    body,
+    onClick: () => {
+      wins.forEach(w => {
+        w.show();
+        w.focus();
+      });
+      notifyRenderer('notification:navigate', { chatId, chatType });
+    },
   });
 }
 

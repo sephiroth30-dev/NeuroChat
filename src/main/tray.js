@@ -2,15 +2,82 @@
 
 const { Tray, Menu, nativeImage, app } = require('electron');
 const path = require('path');
+
 let trayInstance = null;
+let _mainWindow = null;
 let _isQuitting = false;
+let _currentStatus = 'available';
+
+const STATUS_LABELS = {
+  available: 'Disponible',
+  away: 'Ausente',
+  dnd: 'No molestar',
+  invisible: 'Invisible',
+};
 
 app.on('before-quit', () => {
   _isQuitting = true;
 });
 
+function buildMenu() {
+  return Menu.buildFromTemplate([
+    {
+      label: 'Abrir NeuroChat',
+      click: () => {
+        if (_mainWindow) {
+          _mainWindow.show();
+          _mainWindow.focus();
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Estado',
+      submenu: [
+        {
+          label: '🟢 Disponible',
+          type: 'radio',
+          checked: _currentStatus === 'available',
+          click: () => sendStatus('available'),
+        },
+        {
+          label: '🟡 Ausente',
+          type: 'radio',
+          checked: _currentStatus === 'away',
+          click: () => sendStatus('away'),
+        },
+        {
+          label: '🔴 No molestar',
+          type: 'radio',
+          checked: _currentStatus === 'dnd',
+          click: () => sendStatus('dnd'),
+        },
+        {
+          label: '⚫ Invisible',
+          type: 'radio',
+          checked: _currentStatus === 'invisible',
+          click: () => sendStatus('invisible'),
+        },
+      ],
+    },
+    { type: 'separator' },
+    {
+      label: 'Salir',
+      click: () => {
+        _isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+}
+
+function sendStatus(status) {
+  if (_mainWindow) _mainWindow.webContents.send('status:set-from-tray', status);
+}
+
 function init(mainWindow) {
-  // Use a 16x16 transparent PNG as placeholder if .ico not present
+  _mainWindow = mainWindow;
+
   let icon;
   try {
     icon = nativeImage.createFromPath(path.join(__dirname, '../../assets/tray-icon.ico'));
@@ -20,63 +87,21 @@ function init(mainWindow) {
 
   trayInstance = new Tray(icon);
   trayInstance.setToolTip('NeuroChat');
-
-  const buildMenu = (_status = 'available') =>
-    Menu.buildFromTemplate([
-      {
-        label: 'Abrir NeuroChat',
-        click: () => {
-          mainWindow.show();
-          mainWindow.focus();
-        },
-      },
-      { type: 'separator' },
-      {
-        label: 'Estado',
-        submenu: [
-          { label: '🟢 Disponible', click: () => setStatus('available', mainWindow) },
-          { label: '🟡 Ausente', click: () => setStatus('away', mainWindow) },
-          { label: '🔴 No molestar', click: () => setStatus('dnd', mainWindow) },
-          { label: '⚫ Invisible', click: () => setStatus('invisible', mainWindow) },
-        ],
-      },
-      { type: 'separator' },
-      {
-        label: 'Salir',
-        click: () => {
-          _isQuitting = true;
-          app.quit();
-        },
-      },
-    ]);
-
   trayInstance.setContextMenu(buildMenu());
 
   trayInstance.on('double-click', () => {
-    mainWindow.show();
-    mainWindow.focus();
+    if (_mainWindow) {
+      _mainWindow.show();
+      _mainWindow.focus();
+    }
   });
 }
 
-function setStatus(status, mainWindow) {
-  if (mainWindow) mainWindow.webContents.send('status:set-from-tray', status);
-}
-
-function setIcon(status) {
+function updateStatus(status) {
   if (!trayInstance) return;
-  // Icons per status — fallback to empty if not found
-  const iconMap = {
-    available: 'tray-icon.ico',
-    away: 'tray-icon.ico',
-    dnd: 'tray-icon.ico',
-    invisible: 'tray-icon.ico',
-  };
-  try {
-    const img = nativeImage.createFromPath(
-      path.join(__dirname, '../../assets', iconMap[status] || 'tray-icon.ico')
-    );
-    trayInstance.setImage(img);
-  } catch (_) {}
+  _currentStatus = status || 'available';
+  trayInstance.setToolTip(`NeuroChat — ${STATUS_LABELS[_currentStatus] || _currentStatus}`);
+  trayInstance.setContextMenu(buildMenu());
 }
 
 function destroy() {
@@ -86,4 +111,4 @@ function destroy() {
   }
 }
 
-module.exports = { init, setIcon, destroy };
+module.exports = { init, updateStatus, destroy };

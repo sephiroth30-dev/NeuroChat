@@ -5,7 +5,16 @@ const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 
-let db, store, discovery, wsServer, wsClient, fileTransfer, diagnostics, tray, _notifier, windowManager;
+let db,
+  store,
+  discovery,
+  wsServer,
+  wsClient,
+  fileTransfer,
+  diagnostics,
+  tray,
+  _notifier,
+  windowManager;
 
 function register() {
   db = require('./database');
@@ -252,7 +261,14 @@ function register() {
     profile.status = status;
     db.saveProfile(profile);
     discovery.updateAnnounce(profile);
-    tray.setIcon(status);
+    tray.updateStatus(status);
+    return { ok: true };
+  });
+
+  ipcMain.handle('app:setBadge', (_e, count) => {
+    try {
+      app.setBadgeCount(count);
+    } catch {}
     return { ok: true };
   });
 

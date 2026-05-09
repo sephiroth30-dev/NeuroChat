@@ -55,6 +55,9 @@ contextBridge.exposeInMainWorld('neurochat', {
   // Read receipts
   markRead: (messageId, senderUuid) => ipcRenderer.invoke('read:mark', { messageId, senderUuid }),
 
+  // App badge (taskbar / dock)
+  setBadge: count => ipcRenderer.invoke('app:setBadge', count),
+
   // Typing indicator
   sendTyping: opts => ipcRenderer.invoke('typing:send', opts),
 
@@ -76,6 +79,7 @@ contextBridge.exposeInMainWorld('neurochat', {
       'theme:changed',
       'channel:synced',
       'notification:incoming',
+      'notification:navigate',
     ];
     if (!allowed.includes(channel)) return;
     const listener = (_e, ...args) => fn(...args);

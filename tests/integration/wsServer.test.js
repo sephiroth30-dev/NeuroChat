@@ -17,6 +17,7 @@ jest.mock('../../src/main/database', () => ({
   upsertReaction: jest.fn(),
   markRead: jest.fn(),
   getProfile: jest.fn(() => ({ uuid: 'my-uuid', name: 'Me' })),
+  getAllSettings: jest.fn(() => ({})),
 }));
 
 jest.mock('../../src/main/store', () => ({
@@ -53,7 +54,7 @@ function send(msg) {
 }
 
 function makeMockWin() {
-  const win = { isDestroyed: () => false, webContents: { send: jest.fn() } };
+  const win = { isDestroyed: () => false, isFocused: () => false, webContents: { send: jest.fn() } };
   BrowserWindow.getAllWindows.mockReturnValue([win]);
   return win;
 }

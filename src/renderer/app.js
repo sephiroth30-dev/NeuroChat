@@ -6,6 +6,12 @@ const nc = window.neurochat; // IPC bridge from preload
 let myProfile = null;
 let currentChat = null; // { type: 'channel'|'dm', id, name }
 
+// Unread message counts per chatId (in-memory, resets on restart)
+const unreadCounts = new Map();
+// Cached sidebar data for notification navigation
+let cachedChannels = [];
+let cachedUsers = [];
+
 // ── Avatar icons — 5 categories, 2 per category (white on colored bg) ────────
 const AVATAR_SVGS = {
   // Asistencial
@@ -189,13 +195,16 @@ function renderChannelList(channels) {
       '<li class="nav-item" style="color:var(--nc-text-2);font-size:12px;padding:6px 10px;">Sin canales</li>';
     return;
   }
+  cachedChannels = channels;
   channels.forEach(ch => {
     const li = document.createElement('li');
     li.className = 'nav-item';
     li.dataset.id = ch.id;
+    const count = unreadCounts.get(ch.id) || 0;
     li.innerHTML = `
       <span class="channel-hash">#</span>
       <span class="nav-label">${escHtml(ch.name)}</span>
+      ${count > 0 ? `<span class="unread-badge">${count > 99 ? '99+' : count}</span>` : ''}
     `;
     li.onclick = () => openChat({ type: 'channel', id: ch.id, name: ch.name });
     list.appendChild(li);
@@ -207,6 +216,7 @@ function renderDMList(users) {
   const myUuid = myProfile?.uuid;
   list.innerHTML = '';
   const others = users.filter(u => u.uuid !== myUuid);
+  cachedUsers = others;
   if (!others.length) {
     list.innerHTML =
       '<li class="nav-item" style="color:var(--nc-text-2);font-size:12px;padding:6px 10px;">Sin usuarios detectados</li>';
@@ -235,14 +245,36 @@ function renderDMList(users) {
 
     li.appendChild(avatarWrap);
     li.appendChild(label);
+    const dmCount = unreadCounts.get(user.uuid) || 0;
+    if (dmCount > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'unread-badge';
+      badge.textContent = dmCount > 99 ? '99+' : dmCount;
+      li.appendChild(badge);
+    }
     li.onclick = () => openChat({ type: 'dm', id: user.uuid, name: user.name });
     list.appendChild(li);
   });
 }
 
+// ── Unread badge management ───────────────────────────────────────────────────
+function updateBadge() {
+  const total = Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0);
+  nc.setBadge(total);
+  // Re-render sidebar lists to reflect new counts
+  if (cachedChannels.length) renderChannelList(cachedChannels);
+  if (cachedUsers.length) renderDMList([...cachedUsers, ...(myProfile ? [myProfile] : [])]);
+}
+
 // ── Open chat ─────────────────────────────────────────────────────────────────
 async function openChat(chat) {
   currentChat = chat;
+
+  // Clear unread count for this chat
+  if (unreadCounts.has(chat.id)) {
+    unreadCounts.delete(chat.id);
+    updateBadge();
+  }
 
   // Update sidebar active state
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -285,10 +317,7 @@ async function loadMessages() {
   if (myProfile) {
     messages
       .filter(
-        m =>
-          !m.deleted &&
-          m.from_uuid !== myProfile.uuid &&
-          !m.read_by?.includes(myProfile.uuid)
+        m => !m.deleted && m.from_uuid !== myProfile.uuid && !m.read_by?.includes(myProfile.uuid)
       )
       .forEach(m => nc.markRead(m.id, m.from_uuid));
   }
@@ -894,10 +923,27 @@ function subscribeIPCEvents() {
     const isCurrentDM = currentChat?.type === 'dm' && msg.from_uuid === currentChat.id;
     if (isCurrentChannel || isCurrentDM) {
       await loadMessages();
-    } else if (msg.channel_id) {
-      showToast(`Nuevo mensaje en #${msg.channel_name || 'canal'}`);
     } else {
-      showDMNotification(msg);
+      // Increment unread counter for this chat
+      const chatId = msg.channel_id || msg.from_uuid;
+      unreadCounts.set(chatId, (unreadCounts.get(chatId) || 0) + 1);
+      updateBadge();
+
+      if (msg.channel_id) {
+        showToast(`Nuevo mensaje en #${msg.channel_name || 'canal'}`);
+      } else {
+        showDMNotification(msg);
+      }
+    }
+  });
+
+  nc.on('notification:navigate', ({ chatId, chatType }) => {
+    if (chatType === 'channel') {
+      const ch = cachedChannels.find(c => c.id === chatId);
+      if (ch) openChat({ type: 'channel', id: ch.id, name: ch.name });
+    } else {
+      const user = cachedUsers.find(u => u.uuid === chatId);
+      if (user) openChat({ type: 'dm', id: user.uuid, name: user.name });
     }
   });
 
