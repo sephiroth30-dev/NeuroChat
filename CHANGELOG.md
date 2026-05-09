@@ -127,9 +127,36 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
-## [Próximo] — Fase 10: Empaquetado
+## [1.0.0] — 2026-05-09 — Fase 10: Empaquetado Windows
 
-### Planeado
-- Ícono `.ico` 256×256 del logo NeuroChat
-- `npm run build` → genera `build/NeuroChat Setup 1.0.0.exe`
-- Probado en Windows 10 y Windows 11
+### Añadido
+- `assets/icon.ico` y `assets/tray-icon.ico` — ícono multi-resolución (16/32/48/256 px)
+  generado con PNG-in-ICO puro Python, sin dependencias externas
+- `electron-builder.yml` mejorado:
+  - `asar: true` + `asarUnpack` para `better-sqlite3` (native module fuera del archive)
+  - `requestedExecutionLevel: asInvoker` — la app ya no pide UAC en cada arranque;
+    el instalador NSIS gestiona las reglas de firewall en el momento de la instalación
+  - Documentación inline de cada sección
+- Scripts de versión en `package.json`:
+  - `npm run release:patch` — bump `1.0.0 → 1.0.1`, commit, tag `v1.0.1`, push
+  - `npm run release:minor` — bump `1.0.0 → 1.1.0`
+  - `npm run release:major` — bump `1.0.0 → 2.0.0`
+- GitHub Actions `release.yml` ya configurado: al hacer push del tag `v*` ejecuta
+  quality gate (lint + format + tests) → build Windows en `windows-latest` →
+  crea GitHub Release con el `.exe`
+
+### Cómo generar el instalador
+```bash
+# Localmente (requiere Windows o Wine+NSIS en macOS/Linux)
+npm run build:win        # → build/NeuroChat Setup 1.0.0.exe
+
+# Crear release vía CI (recomendado)
+npm run release:patch    # sube tag v1.0.1 → GitHub Actions genera el .exe
+```
+
+### Técnico
+- ICO válido verificado: tipo=1, 4 imágenes, todas PNG firmadas (`\x89PNG`)
+- `better-sqlite3` marcado como `asarUnpack` para que Electron pueda cargar el
+  módulo nativo `.node` que está fuera del asar archive
+- `installer-script.nsh` ya incluido: elimina y re-añade las 3 reglas de firewall
+  (UDP 45678, TCP 45679, TCP 45680) en instalación/desinstalación

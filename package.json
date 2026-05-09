@@ -16,7 +16,10 @@
     "format": "prettier --write \"src/**/*.{js,css,html,json}\"",
     "format:check": "prettier --check \"src/**/*.{js,css,html,json}\"",
     "test": "jest",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "release:patch": "npm version patch && git push origin main --follow-tags",
+    "release:minor": "npm version minor && git push origin main --follow-tags",
+    "release:major": "npm version major && git push origin main --follow-tags"
   },
   "dependencies": {
     "better-sqlite3": "^9.4.3",

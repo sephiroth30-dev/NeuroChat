@@ -1,21 +1,36 @@
 appId: com.neurofit.neurochat
 productName: NeuroChat
 copyright: © 2025 Neurofit
+
 directories:
   output: build
+
+# Exclude dev-only files from the app bundle
 files:
   - src/**/*
   - assets/**/*
   - "!assets/fonts/.gitkeep"
+
+# Fonts go into the app's extra-resources folder so the renderer can load them
 extraResources:
   - from: assets/fonts
     to: fonts
+
+# Native modules (better-sqlite3) must NOT be inside the asar archive
+asar: true
+asarUnpack:
+  - node_modules/better-sqlite3/**/*
+
 win:
   target: nsis
   icon: assets/icon.ico
-  requestedExecutionLevel: requireAdministrator
+  # asInvoker: app runs as the launching user; the NSIS installer handles
+  # firewall rules at install time with its own elevated UAC manifest.
+  requestedExecutionLevel: asInvoker
+
 nsis:
   oneClick: false
+  perMachine: false
   allowToChangeInstallationDirectory: true
   installerIcon: assets/icon.ico
   uninstallerIcon: assets/icon.ico
