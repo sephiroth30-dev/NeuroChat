@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('neurochat', {
       'channel:synced',
       'notification:incoming',
       'notification:navigate',
+      'status:set-from-tray',
     ];
     if (!allowed.includes(channel)) return;
     const listener = (_e, ...args) => fn(...args);

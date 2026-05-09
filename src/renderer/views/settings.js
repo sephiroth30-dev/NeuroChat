@@ -212,6 +212,13 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
           <div class="card">
             <div class="settings-row">
               <div class="settings-row-label">
+                <span>Dirección IP local</span>
+                <small id="s-ips-value">Cargando…</small>
+              </div>
+              <code class="netinfo-ports">UDP 45678 · TCP 45679/80</code>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-label">
                 <span>Diagnóstico de red</span>
                 <small>Verifica puertos y conectividad</small>
               </div>
@@ -342,6 +349,15 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
   nc.getVersion().then(v => {
     const el = container.querySelector('#s-version');
     if (el) el.textContent = v;
+  });
+
+  // Network info
+  nc.getNetworkInfo().then(info => {
+    const el = container.querySelector('#s-ips-value');
+    if (!el) return;
+    el.textContent = info.ips.length
+      ? info.ips.map(i => i.address).join(' · ')
+      : 'Sin interfaz detectada';
   });
 }
 

@@ -12,6 +12,9 @@ const unreadCounts = new Map();
 let cachedChannels = [];
 let cachedUsers = [];
 
+let soundEnabled = true;
+let _audioCtx = null;
+
 // ── Avatar icons — 5 categories, 2 per category (white on colored bg) ────────
 const AVATAR_SVGS = {
   // Asistencial
@@ -61,6 +64,9 @@ async function boot() {
     if (el) el.textContent = `v${v}`;
   });
   setupTheme();
+  nc.getSettings().then(s => {
+    soundEnabled = s.soundEnabled !== false;
+  });
   bindEvents();
   subscribeIPCEvents();
   setupAutoAway();
@@ -104,6 +110,26 @@ function setupAutoAway() {
   document.addEventListener('keydown', onActivity, { passive: true });
   document.addEventListener('click', onActivity, { passive: true });
   resetTimer();
+}
+
+// ── Sound notification ────────────────────────────────────────────────────────
+function playNotifSound() {
+  if (!soundEnabled) return;
+  try {
+    if (!_audioCtx) _audioCtx = new AudioContext();
+    const ctx = _audioCtx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.25);
+  } catch {}
 }
 
 // ── First-run setup ───────────────────────────────────────────────────────────
@@ -207,6 +233,10 @@ function renderChannelList(channels) {
       ${count > 0 ? `<span class="unread-badge">${count > 99 ? '99+' : count}</span>` : ''}
     `;
     li.onclick = () => openChat({ type: 'channel', id: ch.id, name: ch.name });
+    li.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      showChannelMenu(e, ch);
+    });
     list.appendChild(li);
   });
 }
@@ -552,6 +582,53 @@ function removeContextMenu() {
     activeMenu.remove();
     activeMenu = null;
   }
+}
+
+function showChannelMenu(e, ch) {
+  removeContextMenu();
+
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+
+  const items = [
+    {
+      label: '💬 Abrir canal',
+      action: () => openChat({ type: 'channel', id: ch.id, name: ch.name }),
+    },
+  ];
+
+  if (!ch.is_default) {
+    items.push({
+      label: '🗑️ Eliminar canal',
+      danger: true,
+      action: async () => {
+        await nc.deleteChannel(ch.id);
+        if (currentChat?.type === 'channel' && currentChat.id === ch.id) {
+          currentChat = null;
+          $('chat-view').classList.add('hidden');
+          $('empty-state').classList.remove('hidden');
+        }
+        await loadSidebar();
+      },
+    });
+  }
+
+  items.forEach(item => {
+    const el = document.createElement('div');
+    el.className = `context-item${item.danger ? ' danger' : ''}`;
+    el.textContent = item.label;
+    el.onclick = () => {
+      removeContextMenu();
+      item.action();
+    };
+    menu.appendChild(el);
+  });
+
+  menu.style.left = `${Math.min(e.clientX, window.innerWidth - 180)}px`;
+  menu.style.top = `${Math.min(e.clientY, window.innerHeight - 80)}px`;
+  document.body.appendChild(menu);
+  activeMenu = menu;
+  setTimeout(() => document.addEventListener('click', removeContextMenu, { once: true }), 0);
 }
 
 // ── Reply ─────────────────────────────────────────────────────────────────────
@@ -928,6 +1005,7 @@ function subscribeIPCEvents() {
       const chatId = msg.channel_id || msg.from_uuid;
       unreadCounts.set(chatId, (unreadCounts.get(chatId) || 0) + 1);
       updateBadge();
+      playNotifSound();
 
       if (msg.channel_id) {
         showToast(`Nuevo mensaje en #${msg.channel_name || 'canal'}`);
@@ -969,6 +1047,16 @@ function subscribeIPCEvents() {
     // Update ✓✓ → blue ✓✓ without a full reload
     const statusEl = document.querySelector(`.msg-row[data-id="${messageId}"] .msg-status`);
     if (statusEl) statusEl.classList.add('read');
+  });
+
+  nc.on('status:set-from-tray', status => {
+    nc.setStatus(status);
+    myProfile = { ...myProfile, status };
+    renderOwnProfile();
+  });
+
+  nc.on('channel:synced', async () => {
+    await loadSidebar();
   });
 
   nc.on('file:offer', offer => showFileOfferDialog(offer));
