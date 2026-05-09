@@ -1,0 +1,26 @@
+appId: com.neurofit.neurochat
+productName: NeuroChat
+copyright: © 2025 Neurofit
+directories:
+  output: build
+files:
+  - src/**/*
+  - assets/**/*
+  - "!assets/fonts/.gitkeep"
+extraResources:
+  - from: assets/fonts
+    to: fonts
+win:
+  target: nsis
+  icon: assets/icon.ico
+  requestedExecutionLevel: requireAdministrator
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
+  installerHeaderIcon: assets/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NeuroChat
+  include: installer-script.nsh

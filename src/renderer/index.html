@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; font-src 'self' data:;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NeuroChat</title>
+
+    <link rel="stylesheet" href="styles/main.css" />
+    <link rel="stylesheet" href="styles/sidebar.css" />
+    <link rel="stylesheet" href="styles/chat.css" />
+    <link rel="stylesheet" href="styles/components.css" />
+    <link rel="stylesheet" href="styles/settings.css" />
+  </head>
+  <body>
+    <!-- App shell -->
+    <div id="app" class="app-shell">
+      <!-- Sidebar -->
+      <aside id="sidebar" class="sidebar">
+        <!-- Own profile header -->
+        <div class="sidebar-header">
+          <div class="own-profile">
+            <div class="avatar-wrap">
+              <div class="avatar" id="own-avatar" data-initials="?"></div>
+              <button
+                class="own-status-dot available"
+                id="own-status-dot"
+                title="Cambiar estado"
+              ></button>
+            </div>
+            <div class="profile-info">
+              <span class="profile-name" id="own-name">Cargando…</span>
+              <span
+                class="profile-mood"
+                id="own-mood"
+                title="Haz clic para editar tu estado de ánimo"
+              ></span>
+            </div>
+            <button class="icon-btn" id="settings-btn" title="Ajustes">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path
+                  d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Search bar -->
+          <div class="search-bar">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+            <input type="text" id="search-input" placeholder="Buscar…" autocomplete="off" />
+          </div>
+        </div>
+
+        <!-- Channels section -->
+        <div class="sidebar-section">
+          <div class="section-header">
+            <span>Canales</span>
+            <button class="icon-btn" id="new-channel-btn" title="Nuevo canal">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+          </div>
+          <ul id="channel-list" class="nav-list"></ul>
+        </div>
+
+        <!-- Direct messages section -->
+        <div class="sidebar-section">
+          <div class="section-header">
+            <span>Mensajes directos</span>
+          </div>
+          <ul id="dm-list" class="nav-list"></ul>
+        </div>
+
+        <!-- Version footer -->
+        <div class="sidebar-footer">
+          <span id="app-version">—</span>
+        </div>
+      </aside>
+
+      <!-- Main chat area -->
+      <main id="main-content" class="main-content">
+        <!-- Empty state -->
+        <div id="empty-state" class="empty-state">
+          <svg
+            viewBox="0 0 80 80"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            class="empty-logo"
+          >
+            <rect width="80" height="80" rx="20" fill="#4A9E8F" />
+            <path
+              d="M22 28C22 25.8 23.8 24 26 24H54C56.2 24 58 25.8 58 28V46C58 48.2 56.2 50 54 50H44L36 58V50H26C23.8 50 22 48.2 22 46V28Z"
+              fill="white"
+            />
+            <circle cx="32" cy="37" r="3" fill="#4A9E8F" />
+            <circle cx="40" cy="37" r="3" fill="#4A9E8F" />
+            <circle cx="48" cy="37" r="3" fill="#4A9E8F" />
+          </svg>
+          <h2>NeuroChat</h2>
+          <p>Selecciona un canal o usuario para comenzar</p>
+          <p class="tagline">by Neurofic</p>
+        </div>
+
+        <!-- Chat view (hidden until a conversation is selected) -->
+        <div id="chat-view" class="chat-view hidden">
+          <!-- Chat header -->
+          <div class="chat-header">
+            <div class="chat-header-info">
+              <div class="avatar small" id="chat-avatar" data-initials="?"></div>
+              <div>
+                <span class="chat-title" id="chat-title">—</span>
+                <span class="chat-subtitle" id="chat-subtitle"></span>
+              </div>
+            </div>
+            <div class="chat-header-actions">
+              <button class="icon-btn" id="search-chat-btn" title="Buscar en esta conversación">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.35-4.35" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Pinned message banner -->
+          <div id="pinned-banner" class="pinned-banner hidden">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="m12 17 1-2V9.5a1 1 0 0 1 1-1h.5M12 17l-1-2V9.5a1 1 0 0 0-1-1H9.5M12 17v4M8 3h8"
+              />
+            </svg>
+            <span id="pinned-text">Mensaje anclado</span>
+          </div>
+
+          <!-- Messages area -->
+          <div id="message-list" class="message-list">
+            <div class="messages-inner" id="messages-inner"></div>
+          </div>
+
+          <!-- Typing indicator -->
+          <div id="typing-indicator" class="typing-indicator hidden">
+            <span id="typing-text"></span>
+            <span class="typing-dots"><span></span><span></span><span></span></span>
+          </div>
+
+          <!-- Message input area -->
+          <div class="input-area">
+            <!-- Reply preview -->
+            <div id="reply-preview" class="reply-preview hidden">
+              <div class="reply-preview-content">
+                <span class="reply-preview-name" id="reply-preview-name"></span>
+                <span class="reply-preview-text" id="reply-preview-text"></span>
+              </div>
+              <button class="icon-btn" id="cancel-reply-btn">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                >
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div class="input-row">
+              <button class="icon-btn attach-btn" id="attach-btn" title="Adjuntar archivo">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                  />
+                </svg>
+              </button>
+              <input type="file" id="file-input" style="display: none" />
+
+              <div class="message-input-wrap">
+                <div
+                  id="message-input"
+                  class="message-input"
+                  contenteditable="true"
+                  role="textbox"
+                  aria-multiline="false"
+                  data-placeholder="Escribe un mensaje…"
+                ></div>
+              </div>
+
+              <button class="icon-btn emoji-btn" id="emoji-btn" title="Emoji">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                  <line x1="9" y1="9" x2="9.01" y2="9" />
+                  <line x1="15" y1="9" x2="15.01" y2="9" />
+                </svg>
+              </button>
+
+              <button class="send-btn" id="send-btn" title="Enviar">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="m22 2-7 20-4-9-9-4Z" />
+                  <path d="M22 2 11 13" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Emoji picker (simple) -->
+            <div id="emoji-picker" class="emoji-picker hidden"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+      <div id="modal-box" class="modal-box"></div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- First-run setup dialog (hidden, shown on first launch) -->
+    <div id="setup-overlay" class="modal-overlay hidden">
+      <div class="modal-box setup-box">
+        <div class="setup-logo">
+          <svg
+            viewBox="0 0 80 80"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            width="64"
+            height="64"
+          >
+            <rect width="80" height="80" rx="20" fill="#4A9E8F" />
+            <path
+              d="M22 28C22 25.8 23.8 24 26 24H54C56.2 24 58 25.8 58 28V46C58 48.2 56.2 50 54 50H44L36 58V50H26C23.8 50 22 48.2 22 46V28Z"
+              fill="white"
+            />
+            <circle cx="32" cy="37" r="3" fill="#4A9E8F" />
+            <circle cx="40" cy="37" r="3" fill="#4A9E8F" />
+            <circle cx="48" cy="37" r="3" fill="#4A9E8F" />
+          </svg>
+        </div>
+        <h2>Bienvenido a NeuroChat</h2>
+        <p>¿Cómo quieres que te vean tus compañeros?</p>
+        <div class="form-group">
+          <label>Tu nombre</label>
+          <input
+            type="text"
+            id="setup-name"
+            class="form-input"
+            placeholder="Tu nombre"
+            maxlength="50"
+          />
+        </div>
+        <button class="btn btn-primary" id="setup-confirm-btn">Empezar</button>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
