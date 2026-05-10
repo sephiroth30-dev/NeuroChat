@@ -39,3 +39,19 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: NeuroChat
   include: installer-script.nsh
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: assets/icon.icns
+  category: public.app-category.business
+  # No code signing — internal corporate tool distributed via GitHub Releases.
+  # Users on macOS 10.15+ can open with right-click → Abrir on first launch.
+  identity: null
+
+dmg:
+  title: NeuroChat ${version}
+  window:
+    width: 540
+    height: 380

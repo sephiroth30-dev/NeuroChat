@@ -7,7 +7,7 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
 jobs:
-  # ── 1. Quality gate (same as CI) ────────────────────────────────────────────
+  # ── 1. Quality gate ──────────────────────────────────────────────────────────
   quality:
     name: Lint · Format · Test
     runs-on: ubuntu-latest
@@ -33,7 +33,7 @@ jobs:
       - name: Test
         run: npm test
 
-  # ── 2. Build Windows installer (only if quality passes) ─────────────────────
+  # ── 2. Build Windows installer ───────────────────────────────────────────────
   build-win:
     name: Build Windows installer
     needs: quality
@@ -52,25 +52,75 @@ jobs:
         run: npm ci
 
       - name: Rebuild native modules for Electron
-        # Recompiles better-sqlite3 against Electron's Node ABI
         run: npm run rebuild
 
       - name: Build Windows installer
         run: npm run build:win
         env:
-          # Required by electron-builder to publish to GitHub releases
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload installer artifact
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: NeuroChat-${{ github.ref_name }}-win-x64
           path: build/*.exe
           if-no-files-found: error
 
+  # ── 3. Build macOS DMG ───────────────────────────────────────────────────────
+  build-mac:
+    name: Build macOS DMG
+    needs: quality
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules for Electron
+        run: npm run rebuild
+
+      - name: Build macOS DMG (x64 + arm64)
+        run: npm run build:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeuroChat-${{ github.ref_name }}-mac
+          path: build/*.dmg
+          if-no-files-found: error
+
+  # ── 4. Publish GitHub Release with both installers ───────────────────────────
+  publish:
+    name: Publish GitHub Release
+    needs: [build-win, build-mac]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: NeuroChat-${{ github.ref_name }}-win-x64
+          path: dist
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: NeuroChat-${{ github.ref_name }}-mac
+          path: dist
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/*.exe
+          files: dist/*
           generate_release_notes: true
           token: ${{ secrets.GITHUB_TOKEN }}
