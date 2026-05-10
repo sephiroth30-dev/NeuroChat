@@ -3,7 +3,10 @@ productName: NeuroChat
 copyright: © 2025 Neurofit
 
 directories:
-  output: build
+  output: dist
+  # Keep buildResources separate from output so electron-builder can find
+  # installer-script.nsh and other build resources without conflicts.
+  buildResources: build-resources
 
 # Exclude dev-only files from the app bundle
 files:
@@ -39,16 +42,14 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: NeuroChat
   include: installer-script.nsh
+  # Path is relative to buildResources (build-resources/)
 
 mac:
-  target:
-    - target: dmg
-      arch: [x64, arm64]
+  target: dmg
   icon: assets/icon.icns
   category: public.app-category.business
-  # No code signing — internal corporate tool distributed via GitHub Releases.
-  # Users on macOS 10.15+ can open with right-click → Abrir on first launch.
-  identity: null
+  # Code signing disabled via CSC_IDENTITY_AUTO_DISCOVERY=false in CI env.
+  # Internal tool: users open with right-click → Abrir on first launch.
 
 dmg:
   title: NeuroChat ${version}
