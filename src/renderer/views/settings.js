@@ -1,5 +1,7 @@
 'use strict';
 
+import { renderDiagResults } from './diagnostics.js';
+
 // Avatar icons — 5 categories, 2 per category (white on colored bg)
 const AVATAR_CATEGORIES = [
   {
@@ -365,51 +367,6 @@ function statusOption(value, icon, label, current) {
   return `<div class="status-option${current === value ? ' active' : ''}" data-status="${value}">
     <span>${icon}</span><span>${label}</span>
   </div>`;
-}
-
-function renderDiagResults(container, r) {
-  container.innerHTML = '';
-  const rows = [
-    { label: 'Interfaz de red', ok: r.ip.ok, value: r.ip.value || '—' },
-    { label: 'Puerto UDP 45678', ok: r.udpPort.ok, value: '' },
-    { label: 'Puerto TCP 45679', ok: r.wsPort.ok, value: '' },
-    { label: 'Puerto TCP 45680', ok: r.filePort.ok, value: '' },
-    {
-      label: 'Usuarios en red',
-      ok: r.usersDetected.ok,
-      warn: !r.usersDetected.ok,
-      value: `${r.usersDetected.count} detectados`,
-    },
-    {
-      label: 'Múltiples interfaces',
-      ok: !r.multipleInterfaces.warn,
-      warn: r.multipleInterfaces.warn,
-      value: r.multipleInterfaces.count > 1 ? `${r.multipleInterfaces.count} interfaces` : '',
-    },
-  ];
-  rows.forEach(row => {
-    const el = document.createElement('div');
-    el.className = 'diag-row';
-    el.innerHTML = `
-      <span class="diag-icon">${row.ok ? '✅' : row.warn ? '⚠️' : '❌'}</span>
-      <span class="diag-label">${row.label}</span>
-      <span class="diag-value">${esc(row.value)}</span>`;
-    container.appendChild(el);
-  });
-
-  if (!r.udpPort.ok || !r.wsPort.ok || !r.filePort.ok) {
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-primary';
-    btn.style.marginTop = '8px';
-    btn.textContent = 'Añadir excepción de firewall automáticamente';
-    btn.onclick = async () => {
-      btn.disabled = true;
-      btn.textContent = 'Aplicando…';
-      await window.neurochat.addFirewallRules();
-      btn.textContent = '✓ Reglas aplicadas (reinicia NeuroChat)';
-    };
-    container.appendChild(btn);
-  }
 }
 
 function esc(str) {

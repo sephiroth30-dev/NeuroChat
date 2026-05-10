@@ -1,6 +1,6 @@
 'use strict';
 
-const { ipcMain, app, shell, dialog, nativeTheme } = require('electron');
+const { ipcMain, app, shell, dialog, nativeTheme, nativeImage } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
@@ -265,10 +265,23 @@ function register() {
     return { ok: true };
   });
 
-  ipcMain.handle('app:setBadge', (_e, count) => {
+  ipcMain.handle('app:setBadge', (_e, count, dataUrl) => {
     try {
-      app.setBadgeCount(count);
+      app.setBadgeCount(count); // macOS / Linux
     } catch {}
+    const win = windowManager.getMainWindow();
+    if (win && !win.isDestroyed()) {
+      if (count > 0 && dataUrl) {
+        try {
+          const img = nativeImage.createFromDataURL(dataUrl);
+          win.setOverlayIcon(img, `${count} mensajes no leídos`);
+        } catch {}
+      } else {
+        try {
+          win.setOverlayIcon(null, '');
+        } catch {}
+      }
+    }
     return { ok: true };
   });
 

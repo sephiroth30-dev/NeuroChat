@@ -290,10 +290,28 @@ function renderDMList(users) {
 // ── Unread badge management ───────────────────────────────────────────────────
 function updateBadge() {
   const total = Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0);
-  nc.setBadge(total);
+  const dataUrl = total > 0 ? createBadgeDataUrl(total) : null;
+  nc.setBadge(total, dataUrl);
   // Re-render sidebar lists to reflect new counts
   if (cachedChannels.length) renderChannelList(cachedChannels);
   if (cachedUsers.length) renderDMList([...cachedUsers, ...(myProfile ? [myProfile] : [])]);
+}
+
+function createBadgeDataUrl(count) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 16;
+  canvas.height = 16;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#E05A5A';
+  ctx.beginPath();
+  ctx.arc(8, 8, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 9px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(count > 99 ? '99+' : String(count), 8, 8.5);
+  return canvas.toDataURL('image/png');
 }
 
 // ── Open chat ─────────────────────────────────────────────────────────────────

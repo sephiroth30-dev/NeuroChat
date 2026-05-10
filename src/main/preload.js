@@ -56,7 +56,7 @@ contextBridge.exposeInMainWorld('neurochat', {
   markRead: (messageId, senderUuid) => ipcRenderer.invoke('read:mark', { messageId, senderUuid }),
 
   // App badge (taskbar / dock)
-  setBadge: count => ipcRenderer.invoke('app:setBadge', count),
+  setBadge: (count, dataUrl) => ipcRenderer.invoke('app:setBadge', count, dataUrl),
 
   // Typing indicator
   sendTyping: opts => ipcRenderer.invoke('typing:send', opts),
