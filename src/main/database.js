@@ -477,7 +477,7 @@ function isChannelMember(channelId, userUuid) {
 
 function seedDefaultChannels() {
   const existing = db.prepare('SELECT COUNT(*) as c FROM channels').get();
-  if (existing.c > 0) return;
+  if ((existing?.c ?? 0) > 0) return;
 
   const now = Date.now();
   const insert = db.prepare(`
