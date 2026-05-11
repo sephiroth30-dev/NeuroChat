@@ -210,14 +210,15 @@ function setupTheme() {}
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 async function loadSidebar() {
-  const [channels, users, hidden] = await Promise.all([
+  const [channels, users, hidden, lastActivity] = await Promise.all([
     nc.getChannels(),
     nc.getUsers(),
     nc.getHiddenDMs(),
+    nc.getLastDMActivity(),
   ]);
   hiddenDMs = hidden || [];
   renderChannelList(channels);
-  renderDMList(users);
+  renderDMList(users, lastActivity || {});
 }
 
 function renderChannelList(channels) {
@@ -248,7 +249,7 @@ function renderChannelList(channels) {
   });
 }
 
-function renderDMList(users) {
+function renderDMList(users, lastActivity = {}) {
   const list = $('dm-list');
   const myUuid = myProfile?.uuid;
   list.innerHTML = '';
@@ -258,6 +259,17 @@ function renderDMList(users) {
   // Visible = not hidden OR has unread messages
   const visible = others.filter(u => !hiddenDMs.includes(u.uuid) || (unreadCounts.get(u.uuid) || 0) > 0);
 
+  // Sort: online first, then by last message activity desc, then by name
+  visible.sort((a, b) => {
+    const aOnline = a.is_online ? 1 : 0;
+    const bOnline = b.is_online ? 1 : 0;
+    if (aOnline !== bOnline) return bOnline - aOnline;
+    const aTs = lastActivity[a.uuid] || 0;
+    const bTs = lastActivity[b.uuid] || 0;
+    if (aTs !== bTs) return bTs - aTs;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
   if (!visible.length) {
     list.innerHTML =
       '<li class="nav-item" style="color:var(--nc-text-2);font-size:12px;padding:6px 10px;">Sin usuarios detectados</li>';
@@ -265,7 +277,7 @@ function renderDMList(users) {
   }
   visible.forEach(user => {
     const li = document.createElement('li');
-    li.className = 'nav-item';
+    li.className = 'nav-item dm-item';
     li.dataset.uuid = user.uuid;
 
     const statusClass = user.is_online ? user.status || 'available' : 'offline';
@@ -282,12 +294,24 @@ function renderDMList(users) {
     avatarWrap.appendChild(avatarEl);
     avatarWrap.appendChild(statusDot);
 
+    const labelWrap = document.createElement('div');
+    labelWrap.className = 'dm-label-wrap';
+
     const label = document.createElement('span');
     label.className = 'nav-label';
     label.textContent = user.name;
+    labelWrap.appendChild(label);
+
+    if (user.status_message) {
+      const mood = document.createElement('span');
+      mood.className = 'dm-status-msg';
+      mood.textContent = user.status_message;
+      labelWrap.appendChild(mood);
+    }
 
     li.appendChild(avatarWrap);
-    li.appendChild(label);
+    li.appendChild(labelWrap);
+
     const dmCount = unreadCounts.get(user.uuid) || 0;
     if (dmCount > 0) {
       const badge = document.createElement('span');
@@ -308,7 +332,11 @@ function updateBadge() {
   nc.setBadge(total, dataUrl);
   // Re-render sidebar lists to reflect new counts
   if (cachedChannels.length) renderChannelList(cachedChannels);
-  if (cachedUsers.length) renderDMList([...cachedUsers, ...(myProfile ? [myProfile] : [])]);
+  if (cachedUsers.length) {
+    nc.getLastDMActivity().then(activity => {
+      renderDMList([...cachedUsers, ...(myProfile ? [myProfile] : [])], activity || {});
+    });
+  }
 }
 
 function createBadgeDataUrl(count) {
@@ -1145,6 +1173,7 @@ function subscribeIPCEvents() {
       unreadCounts.set(chatId, (unreadCounts.get(chatId) || 0) + 1);
       updateBadge();
       playNotifSound();
+      nc.flashWindow();
 
       if (msg.channel_id) {
         showToast(`Nuevo mensaje en #${msg.channel_name || 'canal'}`);
@@ -1198,7 +1227,14 @@ function subscribeIPCEvents() {
     await loadSidebar();
   });
 
-  nc.on('file:offer', offer => showFileOfferDialog(offer));
+  nc.on('file:offer', offer => {
+    if (offer.size <= 30 * 1024 * 1024) {
+      nc.acceptFile(offer.transferId);
+      showToast(`Recibiendo ${offer.name} de ${offer.senderName}…`);
+    } else {
+      showFileOfferDialog(offer);
+    }
+  });
   nc.on('file:progress', data => updateTransferProgress(data));
   nc.on('file:complete', async data => {
     // Reload messages so the file bubble becomes clickable with localPath
@@ -1295,6 +1331,7 @@ function openSettings() {
         <div id="chat-view" class="chat-view hidden"></div>`;
           myProfile = await nc.getProfile();
           renderOwnProfile();
+          await loadSidebar();
         },
         onProfileSaved: p => {
           myProfile = p;

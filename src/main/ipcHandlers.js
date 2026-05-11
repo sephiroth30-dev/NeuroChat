@@ -64,6 +64,8 @@ function register() {
     return fromDb.map(u => ({ ...u, ...(onlineMap.get(u.uuid) || {}) }));
   });
 
+  ipcMain.handle('users:lastActivity', () => db.getLastDMTimestamps());
+
   // ── Channels ───────────────────────────────────────────────────────────────
 
   ipcMain.handle('channels:get', () => db.getChannels());
@@ -262,6 +264,15 @@ function register() {
     db.saveProfile(profile);
     discovery.updateAnnounce(profile);
     tray.updateStatus(status);
+    return { ok: true };
+  });
+
+  ipcMain.handle('app:flash', () => {
+    const win = windowManager.getMainWindow();
+    if (win && !win.isDestroyed() && !win.isFocused()) {
+      win.flashFrame(true);
+      win.once('focus', () => win.flashFrame(false));
+    }
     return { ok: true };
   });
 

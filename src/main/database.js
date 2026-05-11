@@ -4,7 +4,7 @@ const path = require('path');
 const { app } = require('electron');
 const Database = require('better-sqlite3');
 
-const _DB_VERSION = 3;
+const _DB_VERSION = 4;
 let db = null;
 
 function getDbPath() {
@@ -135,6 +135,13 @@ function runMigrations() {
     db.exec("DELETE FROM users WHERE uuid LIKE 'seed-u%'");
     db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(3);
   }
+
+  if (current < 4) {
+    try {
+      db.exec("ALTER TABLE users ADD COLUMN status_message TEXT DEFAULT ''");
+    } catch {}
+    db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(4);
+  }
 }
 
 // ── Profile ──────────────────────────────────────────────────────────────────
@@ -163,17 +170,37 @@ function saveProfile(profile) {
 function upsertUser(user) {
   db.prepare(
     `
-    INSERT INTO users (uuid, name, avatar, color, last_seen, is_online, status)
-    VALUES (@uuid, @name, @avatar, @color, @last_seen, @is_online, @status)
+    INSERT INTO users (uuid, name, avatar, color, last_seen, is_online, status, status_message)
+    VALUES (@uuid, @name, @avatar, @color, @last_seen, @is_online, @status, @status_message)
     ON CONFLICT(uuid) DO UPDATE SET
       name = excluded.name,
       avatar = excluded.avatar,
       color = excluded.color,
       last_seen = excluded.last_seen,
       is_online = excluded.is_online,
-      status = excluded.status
+      status = excluded.status,
+      status_message = excluded.status_message
   `
-  ).run({ status: 'available', ...user });
+  ).run({ status: 'available', status_message: '', ...user });
+}
+
+function getLastDMTimestamps() {
+  const myUuid = getProfile()?.uuid;
+  if (!myUuid) return {};
+  const rows = db.prepare(`
+    SELECT
+      CASE
+        WHEN from_uuid = ? THEN REPLACE(private_chat_uuid, ? || ':', '')
+        ELSE from_uuid
+      END AS peer_uuid,
+      MAX(timestamp) AS last_ts
+    FROM messages
+    WHERE private_chat_uuid IS NOT NULL AND deleted = 0
+    GROUP BY private_chat_uuid
+  `).all(myUuid, myUuid);
+  const map = {};
+  rows.forEach(r => { map[r.peer_uuid] = r.last_ts; });
+  return map;
 }
 
 function getAllUsers() {
@@ -473,4 +500,5 @@ module.exports = {
   deleteDMMessages,
   getHiddenDMs,
   setHiddenDM,
+  getLastDMTimestamps,
 };

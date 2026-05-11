@@ -306,3 +306,25 @@
   font-family: var(--nc-mono);
   letter-spacing: 0.03em;
 }
+
+/* ─── DM list: label + status message ──────────────────────────────────── */
+.dm-item { align-items: center; }
+
+.dm-label-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.dm-label-wrap .nav-label {
+  flex: unset;
+}
+.dm-status-msg {
+  font-size: 11px;
+  color: var(--nc-text-2);
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

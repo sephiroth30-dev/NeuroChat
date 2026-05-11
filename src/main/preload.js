@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('neurochat', {
 
   // Users
   getUsers: () => ipcRenderer.invoke('users:get'),
+  getLastDMActivity: () => ipcRenderer.invoke('users:lastActivity'),
 
   // Channels
   getChannels: () => ipcRenderer.invoke('channels:get'),
@@ -63,6 +64,7 @@ contextBridge.exposeInMainWorld('neurochat', {
 
   // App badge (taskbar / dock)
   setBadge: (count, dataUrl) => ipcRenderer.invoke('app:setBadge', count, dataUrl),
+  flashWindow: () => ipcRenderer.invoke('app:flash'),
 
   // Typing indicator
   sendTyping: opts => ipcRenderer.invoke('typing:send', opts),
