@@ -14,6 +14,15 @@ let cachedUsers = [];
 
 let soundEnabled = true;
 let _audioCtx = null;
+let hiddenDMs = [];
+
+const STATUS_TITLES = {
+  available: 'Disponible',
+  away: 'Ausente',
+  dnd: 'No molestar',
+  invisible: 'Invisible',
+  offline: 'Desconectado',
+};
 
 // ── Avatar icons — 5 categories, 2 per category (white on colored bg) ────────
 const AVATAR_SVGS = {
@@ -56,7 +65,6 @@ function require_os_username() {
 }
 
 async function boot() {
-  await nc.seedUsers(); // idempotent — seeds test data on first run only
   renderOwnProfile();
   await loadSidebar();
   nc.getVersion().then(v => {
@@ -168,12 +176,6 @@ function renderOwnProfile() {
 
   const dot = $('own-status-dot');
   if (dot) {
-    const STATUS_TITLES = {
-      available: 'Disponible',
-      away: 'Ausente',
-      dnd: 'No molestar',
-      invisible: 'Invisible',
-    };
     dot.className = `own-status-dot ${myProfile.status || 'available'}`;
     dot.title = `Estado: ${STATUS_TITLES[myProfile.status] || 'Disponible'} — clic para cambiar`;
   }
@@ -208,7 +210,12 @@ function setupTheme() {}
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 async function loadSidebar() {
-  const [channels, users] = await Promise.all([nc.getChannels(), nc.getUsers()]);
+  const [channels, users, hidden] = await Promise.all([
+    nc.getChannels(),
+    nc.getUsers(),
+    nc.getHiddenDMs(),
+  ]);
+  hiddenDMs = hidden || [];
   renderChannelList(channels);
   renderDMList(users);
 }
@@ -247,17 +254,22 @@ function renderDMList(users) {
   list.innerHTML = '';
   const others = users.filter(u => u.uuid !== myUuid);
   cachedUsers = others;
-  if (!others.length) {
+
+  // Visible = not hidden OR has unread messages
+  const visible = others.filter(u => !hiddenDMs.includes(u.uuid) || (unreadCounts.get(u.uuid) || 0) > 0);
+
+  if (!visible.length) {
     list.innerHTML =
       '<li class="nav-item" style="color:var(--nc-text-2);font-size:12px;padding:6px 10px;">Sin usuarios detectados</li>';
     return;
   }
-  others.forEach(user => {
+  visible.forEach(user => {
     const li = document.createElement('li');
     li.className = 'nav-item';
     li.dataset.uuid = user.uuid;
 
     const statusClass = user.is_online ? user.status || 'available' : 'offline';
+    const statusLabel = STATUS_TITLES[statusClass] || 'Desconectado';
 
     const avatarWrap = document.createElement('div');
     avatarWrap.className = 'avatar-wrap';
@@ -266,6 +278,7 @@ function renderDMList(users) {
     renderAvatar(avatarEl, user);
     const statusDot = document.createElement('span');
     statusDot.className = `avatar-status ${statusClass}`;
+    statusDot.title = statusLabel;
     avatarWrap.appendChild(avatarEl);
     avatarWrap.appendChild(statusDot);
 
@@ -283,6 +296,7 @@ function renderDMList(users) {
       li.appendChild(badge);
     }
     li.onclick = () => openChat({ type: 'dm', id: user.uuid, name: user.name });
+    li.oncontextmenu = e => { e.preventDefault(); showDMMenu(e, user); };
     list.appendChild(li);
   });
 }
@@ -613,6 +627,10 @@ function showChannelMenu(e, ch) {
       label: '💬 Abrir canal',
       action: () => openChat({ type: 'channel', id: ch.id, name: ch.name }),
     },
+    {
+      label: 'ℹ️ Info del canal',
+      action: () => showChannelInfoModal(ch.id),
+    },
   ];
 
   if (!ch.is_default) {
@@ -647,6 +665,109 @@ function showChannelMenu(e, ch) {
   document.body.appendChild(menu);
   activeMenu = menu;
   setTimeout(() => document.addEventListener('click', removeContextMenu, { once: true }), 0);
+}
+
+// ── DM context menu ───────────────────────────────────────────────────────────
+
+function showDMMenu(e, user) {
+  removeContextMenu();
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+
+  const isHidden = hiddenDMs.includes(user.uuid);
+  const items = [
+    {
+      label: '💬 Abrir conversación',
+      action: () => openChat({ type: 'dm', id: user.uuid, name: user.name }),
+    },
+    {
+      label: isHidden ? '👁️ Mostrar conversación' : '🙈 Ocultar conversación',
+      action: async () => {
+        if (isHidden) {
+          await nc.unhideDM(user.uuid);
+        } else {
+          await nc.hideDM(user.uuid);
+          if (currentChat?.type === 'dm' && currentChat.id === user.uuid) {
+            currentChat = null;
+            $('chat-view').classList.add('hidden');
+            $('empty-state').classList.remove('hidden');
+          }
+        }
+        await loadSidebar();
+      },
+    },
+    {
+      label: '🗑️ Eliminar conversación',
+      danger: true,
+      action: async () => {
+        if (!confirm(`¿Eliminar toda la conversación con ${user.name}? Esta acción no se puede deshacer.`)) return;
+        await nc.deleteDMConversation(user.uuid);
+        if (currentChat?.type === 'dm' && currentChat.id === user.uuid) {
+          currentChat = null;
+          $('chat-view').classList.add('hidden');
+          $('empty-state').classList.remove('hidden');
+        }
+        await loadSidebar();
+      },
+    },
+  ];
+
+  items.forEach(item => {
+    const el = document.createElement('div');
+    el.className = `context-item${item.danger ? ' danger' : ''}`;
+    el.textContent = item.label;
+    el.onclick = () => { removeContextMenu(); item.action(); };
+    menu.appendChild(el);
+  });
+
+  menu.style.left = `${Math.min(e.clientX, window.innerWidth - 200)}px`;
+  menu.style.top = `${Math.min(e.clientY, window.innerHeight - 120)}px`;
+  document.body.appendChild(menu);
+  activeMenu = menu;
+  setTimeout(() => document.addEventListener('click', removeContextMenu, { once: true }), 0);
+}
+
+// ── Channel info modal ────────────────────────────────────────────────────────
+
+async function showChannelInfoModal(channelId) {
+  const { channel, members } = await nc.getChannelInfo(channelId);
+  if (!channel) return;
+
+  const existing = document.getElementById('channel-info-modal');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'channel-info-modal';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title"># ${escHtml(channel.name)}</span>
+        <button class="modal-close" id="close-ch-info">✕</button>
+      </div>
+      ${channel.description ? `<p class="modal-desc">${escHtml(channel.description)}</p>` : ''}
+      <div class="modal-section-title">Integrantes (${members.length})</div>
+      <ul class="modal-member-list">
+        ${members.map(m => {
+          const statusClass = m.is_online ? m.status || 'available' : 'offline';
+          const statusLabel = STATUS_TITLES[statusClass] || 'Desconectado';
+          const initials = (m.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+          return `<li class="modal-member">
+            <div class="avatar-wrap" style="flex-shrink:0">
+              <div class="avatar small" style="background:${m.color || '#4A9E8F'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">${initials}</div>
+              <span class="avatar-status ${statusClass}" title="${statusLabel}"></span>
+            </div>
+            <span class="modal-member-name">${escHtml(m.name)}</span>
+            <span class="modal-member-status">${statusLabel}</span>
+          </li>`;
+        }).join('')}
+      </ul>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  document.getElementById('close-ch-info').onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
 }
 
 // ── Reply ─────────────────────────────────────────────────────────────────────

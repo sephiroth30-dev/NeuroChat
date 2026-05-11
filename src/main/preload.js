@@ -49,8 +49,14 @@ contextBridge.exposeInMainWorld('neurochat', {
   setStatus: status => ipcRenderer.invoke('status:set', status),
   setStatusMessage: message => ipcRenderer.invoke('status:setMessage', message),
 
-  // Dev / seed
-  seedUsers: () => ipcRenderer.invoke('debug:seed'),
+  // DM conversation management
+  hideDM: peerUuid => ipcRenderer.invoke('dm:hide', peerUuid),
+  unhideDM: peerUuid => ipcRenderer.invoke('dm:unhide', peerUuid),
+  deleteDMConversation: peerUuid => ipcRenderer.invoke('dm:delete', peerUuid),
+  getHiddenDMs: () => ipcRenderer.invoke('dm:hidden'),
+
+  // Channel info
+  getChannelInfo: channelId => ipcRenderer.invoke('channels:info', channelId),
 
   // Read receipts
   markRead: (messageId, senderUuid) => ipcRenderer.invoke('read:mark', { messageId, senderUuid }),

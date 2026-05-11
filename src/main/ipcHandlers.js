@@ -292,9 +292,35 @@ function register() {
     return { ok: true };
   });
 
-  // ── Debug / Dev ────────────────────────────────────────────────────────────
+  // ── DM conversation management ─────────────────────────────────────────────
 
-  ipcMain.handle('debug:seed', () => db.seedTestUsers());
+  ipcMain.handle('dm:hide', (_e, peerUuid) => {
+    db.setHiddenDM(peerUuid, true);
+    return { ok: true };
+  });
+
+  ipcMain.handle('dm:unhide', (_e, peerUuid) => {
+    db.setHiddenDM(peerUuid, false);
+    return { ok: true };
+  });
+
+  ipcMain.handle('dm:delete', (_e, peerUuid) => {
+    db.deleteDMMessages(peerUuid);
+    db.setHiddenDM(peerUuid, false);
+    return { ok: true };
+  });
+
+  ipcMain.handle('dm:hidden', () => db.getHiddenDMs());
+
+  // ── Channel info ───────────────────────────────────────────────────────────
+
+  ipcMain.handle('channels:info', (_e, channelId) => {
+    const channel = db.getChannel(channelId);
+    const onlineUsers = store.getOnlineUsers();
+    const profile = db.getProfile();
+    const members = profile ? [profile, ...onlineUsers.filter(u => u.uuid !== profile.uuid)] : onlineUsers;
+    return { channel, members };
+  });
 
   // ── Read receipts ──────────────────────────────────────────────────────────
 

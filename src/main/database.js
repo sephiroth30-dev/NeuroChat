@@ -4,7 +4,7 @@ const path = require('path');
 const { app } = require('electron');
 const Database = require('better-sqlite3');
 
-const _DB_VERSION = 2;
+const _DB_VERSION = 3;
 let db = null;
 
 function getDbPath() {
@@ -17,6 +17,7 @@ function initialize() {
   db.pragma('foreign_keys = ON');
   createSchema();
   runMigrations();
+  seedDefaultChannels();
 }
 
 function createSchema() {
@@ -126,6 +127,14 @@ function runMigrations() {
     } catch {}
     db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(2);
   }
+
+  if (current < 3) {
+    // Remove demo seed users and their messages; real channels (seed-ch*) are kept
+    db.exec("DELETE FROM messages WHERE from_uuid LIKE 'seed-u%'");
+    db.exec("DELETE FROM messages WHERE private_chat_uuid LIKE '%seed-u%'");
+    db.exec("DELETE FROM users WHERE uuid LIKE 'seed-u%'");
+    db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(3);
+  }
 }
 
 // ── Profile ──────────────────────────────────────────────────────────────────
@@ -219,12 +228,13 @@ function getMessages({ channelId, privateChatUuid, limit = 50, before = null }) 
   }
   if (privateChatUuid) {
     const myUuid = getProfile()?.uuid;
+    const normalizedId = [myUuid, privateChatUuid].sort().join(':');
     const q = before
-      ? `SELECT * FROM messages WHERE private_chat_uuid IN (?,?) AND timestamp < ? ORDER BY timestamp DESC LIMIT ?`
-      : `SELECT * FROM messages WHERE private_chat_uuid IN (?,?) ORDER BY timestamp DESC LIMIT ?`;
+      ? `SELECT * FROM messages WHERE private_chat_uuid = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?`
+      : `SELECT * FROM messages WHERE private_chat_uuid = ? ORDER BY timestamp DESC LIMIT ?`;
     const rows = before
-      ? db.prepare(q).all(privateChatUuid, myUuid + ':' + privateChatUuid, before, limit)
-      : db.prepare(q).all(privateChatUuid, myUuid + ':' + privateChatUuid, limit);
+      ? db.prepare(q).all(normalizedId, before, limit)
+      : db.prepare(q).all(normalizedId, limit);
     return rows.reverse();
   }
   return [];
@@ -381,185 +391,41 @@ function searchMessages(query, opts = {}) {
   return db.prepare(sql).all(...params);
 }
 
-// ── Seed test data ────────────────────────────────────────────────────────────
+// ── Default channels seed (runs on every init, idempotent) ───────────────────
 
-function seedTestUsers() {
-  const existing = db.prepare("SELECT COUNT(*) as c FROM users WHERE uuid LIKE 'seed-%'").get();
-  if (existing.c > 0) return { already: true };
+function seedDefaultChannels() {
+  const existing = db.prepare('SELECT COUNT(*) as c FROM channels').get();
+  if (existing.c > 0) return;
 
   const now = Date.now();
-
-  const users = [
-    {
-      uuid: 'seed-u1',
-      name: 'Dra. Ana Martínez',
-      color: '#5B8DD9',
-      status: 'available',
-      is_online: 1,
-      last_seen: now,
-    },
-    {
-      uuid: 'seed-u2',
-      name: 'Dr. Carlos Ruiz',
-      color: '#9B59B6',
-      status: 'away',
-      is_online: 1,
-      last_seen: now - 900000,
-    },
-    {
-      uuid: 'seed-u3',
-      name: 'Lic. María García',
-      color: '#E67E22',
-      status: 'available',
-      is_online: 1,
-      last_seen: now,
-    },
-    {
-      uuid: 'seed-u4',
-      name: 'Psic. Juan López',
-      color: '#E74C3C',
-      status: 'dnd',
-      is_online: 1,
-      last_seen: now - 300000,
-    },
-    {
-      uuid: 'seed-u5',
-      name: 'Enf. Laura Torres',
-      color: '#1ABC9C',
-      status: 'offline',
-      is_online: 0,
-      last_seen: now - 7200000,
-    },
-  ];
-
-  const channels = [
-    {
-      id: 'seed-ch1',
-      name: 'general',
-      description: 'Canal general del equipo',
-      created_by: 'seed-u1',
-      created_at: now - 604800000,
-      is_default: 1,
-    },
-    {
-      id: 'seed-ch2',
-      name: 'clínica',
-      description: 'Casos y discusiones clínicas',
-      created_by: 'seed-u1',
-      created_at: now - 432000000,
-      is_default: 0,
-    },
-    {
-      id: 'seed-ch3',
-      name: 'administración',
-      description: 'Temas administrativos y agenda',
-      created_by: 'seed-u3',
-      created_at: now - 259200000,
-      is_default: 0,
-    },
-  ];
-
-  const messages = [
-    {
-      id: 'seed-m1',
-      ch: 'seed-ch1',
-      from: 'seed-u1',
-      content: '¡Buenos días equipo! ¿Cómo van con los reportes del mes?',
-      ts: now - 7200000,
-    },
-    {
-      id: 'seed-m2',
-      ch: 'seed-ch1',
-      from: 'seed-u2',
-      content: 'Todo bien, casi terminamos. ¿Reunión a las 3pm hoy?',
-      ts: now - 6900000,
-    },
-    {
-      id: 'seed-m3',
-      ch: 'seed-ch1',
-      from: 'seed-u3',
-      content: 'Confirmo asistencia.',
-      ts: now - 6600000,
-    },
-    {
-      id: 'seed-m4',
-      ch: 'seed-ch1',
-      from: 'seed-u4',
-      content: 'Yo también, llegaré 5 minutos tarde.',
-      ts: now - 6300000,
-    },
-    {
-      id: 'seed-m5',
-      ch: 'seed-ch2',
-      from: 'seed-u4',
-      content: 'Tengo un caso interesante para la reunión clínica de mañana.',
-      ts: now - 3600000,
-    },
-    {
-      id: 'seed-m6',
-      ch: 'seed-ch2',
-      from: 'seed-u1',
-      content: 'Perfecto, lo agendamos. ¿Puedes enviar el resumen antes de las 5pm?',
-      ts: now - 3300000,
-    },
-    {
-      id: 'seed-m7',
-      ch: 'seed-ch2',
-      from: 'seed-u4',
-      content: 'Claro, lo envío ahora.',
-      ts: now - 3000000,
-    },
-    {
-      id: 'seed-m8',
-      ch: 'seed-ch3',
-      from: 'seed-u3',
-      content: 'Recordatorio: mañana hay capacitación a las 9am en sala B.',
-      ts: now - 1800000,
-    },
-    {
-      id: 'seed-m9',
-      ch: 'seed-ch3',
-      from: 'seed-u2',
-      content: '¿Hay que llevar algo específico?',
-      ts: now - 1500000,
-    },
-    {
-      id: 'seed-m10',
-      ch: 'seed-ch3',
-      from: 'seed-u3',
-      content: 'Solo laptop y libreta. El material lo compartimos digital.',
-      ts: now - 1200000,
-    },
-  ];
-
-  const insertUser = db.prepare(`
-    INSERT OR IGNORE INTO users (uuid, name, avatar, color, last_seen, is_online, status)
-    VALUES (@uuid, @name, NULL, @color, @last_seen, @is_online, @status)
-  `);
-  const insertCh = db.prepare(`
+  const insert = db.prepare(`
     INSERT OR IGNORE INTO channels (id, name, description, created_by, created_at, is_default)
-    VALUES (@id, @name, @description, @created_by, @created_at, @is_default)
+    VALUES (@id, @name, @description, NULL, @created_at, @is_default)
   `);
-  const insertMsg = db.prepare(`
-    INSERT OR IGNORE INTO messages
-      (id, channel_id, private_chat_uuid, from_uuid, content, type, reply_to, timestamp, edited, deleted, delivered, read_by)
-    VALUES
-      (@id, @channel_id, NULL, @from_uuid, @content, 'text', NULL, @timestamp, 0, 0, 1, '[]')
-  `);
+  insert.run({ id: 'ch-general', name: 'general', description: 'Canal general del equipo', created_at: now, is_default: 1 });
+  insert.run({ id: 'ch-clinica', name: 'clínica', description: 'Casos y discusiones clínicas', created_at: now, is_default: 0 });
+  insert.run({ id: 'ch-admin', name: 'administración', description: 'Temas administrativos y agenda', created_at: now, is_default: 0 });
+}
 
-  users.forEach(u => insertUser.run(u));
-  channels.forEach(c => insertCh.run(c));
-  messages.forEach(m =>
-    insertMsg.run({
-      id: m.id,
-      channel_id: m.ch,
-      from_uuid: m.from,
-      content: m.content,
-      timestamp: m.ts,
-    })
-  );
+// ── DM conversation management ────────────────────────────────────────────────
 
-  return { seeded: users.length };
+function deleteDMMessages(peerUuid) {
+  const myUuid = getProfile()?.uuid;
+  if (!myUuid) return;
+  const chatId = [myUuid, peerUuid].sort().join(':');
+  db.prepare("DELETE FROM messages WHERE private_chat_uuid = ?").run(chatId);
+}
+
+function getHiddenDMs() {
+  return getSetting('hidden_dms') || [];
+}
+
+function setHiddenDM(peerUuid, hidden) {
+  const list = getHiddenDMs();
+  const next = hidden
+    ? [...new Set([...list, peerUuid])]
+    : list.filter(id => id !== peerUuid);
+  setSetting('hidden_dms', next);
 }
 
 // ── Misc ──────────────────────────────────────────────────────────────────────
@@ -604,5 +470,7 @@ module.exports = {
   setSetting,
   getAllSettings,
   searchMessages,
-  seedTestUsers,
+  deleteDMMessages,
+  getHiddenDMs,
+  setHiddenDM,
 };
