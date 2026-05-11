@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2ECFBF"/>
+      <stop offset="100%" style="stop-color:#0E9E90"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect width="1024" height="1024" rx="230" ry="230" fill="url(#bg)"/>
+
+  <!-- White speech bubble -->
+  <circle cx="512" cy="470" r="295" fill="white"/>
+  <!-- Bubble tail pointing bottom-left -->
+  <path d="M 340 700 Q 290 780 220 810 Q 320 790 390 740 Z" fill="white"/>
+
+  <!-- Three teal dots -->
+  <circle cx="392" cy="470" r="52" fill="#0FA898"/>
+  <circle cx="512" cy="470" r="52" fill="#0FA898"/>
+  <circle cx="632" cy="470" r="52" fill="#0FA898"/>
+</svg>

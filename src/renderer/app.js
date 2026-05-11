@@ -256,73 +256,106 @@ function renderDMList(users, lastActivity = {}) {
   const others = users.filter(u => u.uuid !== myUuid);
   cachedUsers = others;
 
-  // Visible = not hidden OR has unread messages
-  const visible = others.filter(u => !hiddenDMs.includes(u.uuid) || (unreadCounts.get(u.uuid) || 0) > 0);
-
-  // Sort: online first, then by last message activity desc, then by name
-  visible.sort((a, b) => {
-    const aOnline = a.is_online ? 1 : 0;
-    const bOnline = b.is_online ? 1 : 0;
-    if (aOnline !== bOnline) return bOnline - aOnline;
+  const sortFn = (a, b) => {
     const aTs = lastActivity[a.uuid] || 0;
     const bTs = lastActivity[b.uuid] || 0;
     if (aTs !== bTs) return bTs - aTs;
     return (a.name || '').localeCompare(b.name || '');
-  });
+  };
 
-  if (!visible.length) {
+  // Split: visible (not hidden or has unread) vs hidden
+  const visibleUsers = others.filter(u => !hiddenDMs.includes(u.uuid) || (unreadCounts.get(u.uuid) || 0) > 0);
+  const hiddenUsers  = others.filter(u =>  hiddenDMs.includes(u.uuid) && (unreadCounts.get(u.uuid) || 0) === 0);
+
+  const onlineUsers  = visibleUsers.filter(u =>  u.is_online).sort(sortFn);
+  const offlineUsers = visibleUsers.filter(u => !u.is_online).sort(sortFn);
+
+  if (!visibleUsers.length && !hiddenUsers.length) {
     list.innerHTML =
       '<li class="nav-item" style="color:var(--nc-text-2);font-size:12px;padding:6px 10px;">Sin usuarios detectados</li>';
     return;
   }
-  visible.forEach(user => {
-    const li = document.createElement('li');
-    li.className = 'nav-item dm-item';
-    li.dataset.uuid = user.uuid;
 
-    const statusClass = user.is_online ? user.status || 'available' : 'offline';
-    const statusLabel = STATUS_TITLES[statusClass] || 'Desconectado';
+  onlineUsers.forEach(u => appendDMItem(list, u, false));
 
-    const avatarWrap = document.createElement('div');
-    avatarWrap.className = 'avatar-wrap';
-    const avatarEl = document.createElement('div');
-    avatarEl.className = 'avatar small';
-    renderAvatar(avatarEl, user);
-    const statusDot = document.createElement('span');
-    statusDot.className = `avatar-status ${statusClass}`;
-    statusDot.title = statusLabel;
-    avatarWrap.appendChild(avatarEl);
-    avatarWrap.appendChild(statusDot);
+  if (offlineUsers.length > 0) {
+    const divider = document.createElement('li');
+    divider.className = 'dm-divider';
+    divider.textContent = 'Desconectados';
+    list.appendChild(divider);
+    offlineUsers.forEach(u => appendDMItem(list, u, true));
+  }
 
-    const labelWrap = document.createElement('div');
-    labelWrap.className = 'dm-label-wrap';
+  if (hiddenUsers.length > 0) {
+    const toggleLi = document.createElement('li');
+    toggleLi.className = 'nav-item hidden-dms-toggle';
+    toggleLi.innerHTML = `
+      <svg class="hidden-dms-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
+      <span style="flex:1;font-size:12px;">Chats ocultos (${hiddenUsers.length})</span>
+    `;
+    const hiddenList = document.createElement('ul');
+    hiddenList.className = 'hidden-dms-list';
+    hiddenList.style.display = 'none';
+    hiddenUsers.sort(sortFn).forEach(u => appendDMItem(hiddenList, u, !u.is_online));
 
-    const label = document.createElement('span');
-    label.className = 'nav-label';
-    label.textContent = user.name;
-    labelWrap.appendChild(label);
+    toggleLi.onclick = () => {
+      const open = hiddenList.style.display !== 'none';
+      hiddenList.style.display = open ? 'none' : 'block';
+      toggleLi.querySelector('.hidden-dms-chevron').style.transform = open ? '' : 'rotate(90deg)';
+    };
+    list.appendChild(toggleLi);
+    list.appendChild(hiddenList);
+  }
+}
 
-    if (user.status_message) {
-      const mood = document.createElement('span');
-      mood.className = 'dm-status-msg';
-      mood.textContent = user.status_message;
-      labelWrap.appendChild(mood);
-    }
+function appendDMItem(container, user, isOffline) {
+  const li = document.createElement('li');
+  li.className = `nav-item dm-item${isOffline ? ' dm-offline' : ''}`;
+  li.dataset.uuid = user.uuid;
 
-    li.appendChild(avatarWrap);
-    li.appendChild(labelWrap);
+  const statusClass = user.is_online ? (user.status || 'available') : 'offline';
+  const statusLabel = STATUS_TITLES[statusClass] || 'Desconectado';
 
-    const dmCount = unreadCounts.get(user.uuid) || 0;
-    if (dmCount > 0) {
-      const badge = document.createElement('span');
-      badge.className = 'unread-badge';
-      badge.textContent = dmCount > 99 ? '99+' : dmCount;
-      li.appendChild(badge);
-    }
-    li.onclick = () => openChat({ type: 'dm', id: user.uuid, name: user.name });
-    li.oncontextmenu = e => { e.preventDefault(); showDMMenu(e, user); };
-    list.appendChild(li);
-  });
+  const avatarWrap = document.createElement('div');
+  avatarWrap.className = 'avatar-wrap';
+  const avatarEl = document.createElement('div');
+  avatarEl.className = 'avatar small';
+  renderAvatar(avatarEl, user);
+  const statusDot = document.createElement('span');
+  statusDot.className = `avatar-status ${statusClass}`;
+  statusDot.title = statusLabel;
+  avatarWrap.appendChild(avatarEl);
+  avatarWrap.appendChild(statusDot);
+
+  const labelWrap = document.createElement('div');
+  labelWrap.className = 'dm-label-wrap';
+
+  const label = document.createElement('span');
+  label.className = 'nav-label';
+  label.textContent = user.name;
+  labelWrap.appendChild(label);
+
+  const subtitle = user.status_message || (isOffline ? 'Desconectado' : statusLabel !== 'Disponible' ? statusLabel : '');
+  if (subtitle) {
+    const mood = document.createElement('span');
+    mood.className = 'dm-status-msg';
+    mood.textContent = subtitle;
+    labelWrap.appendChild(mood);
+  }
+
+  li.appendChild(avatarWrap);
+  li.appendChild(labelWrap);
+
+  const dmCount = unreadCounts.get(user.uuid) || 0;
+  if (dmCount > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'unread-badge';
+    badge.textContent = dmCount > 99 ? '99+' : dmCount;
+    li.appendChild(badge);
+  }
+  li.onclick = () => openChat({ type: 'dm', id: user.uuid, name: user.name });
+  li.oncontextmenu = e => { e.preventDefault(); showDMMenu(e, user); };
+  container.appendChild(li);
 }
 
 // ── Unread badge management ───────────────────────────────────────────────────
@@ -334,7 +367,7 @@ function updateBadge() {
   if (cachedChannels.length) renderChannelList(cachedChannels);
   if (cachedUsers.length) {
     nc.getLastDMActivity().then(activity => {
-      renderDMList([...cachedUsers, ...(myProfile ? [myProfile] : [])], activity || {});
+      renderDMList(cachedUsers, activity || {});
     });
   }
 }
@@ -1220,8 +1253,9 @@ function bindEvents() {
 // ── IPC events from main ──────────────────────────────────────────────────────
 function subscribeIPCEvents() {
   nc.on('users:updated', async () => {
-    const users = await nc.getUsers();
-    renderDMList(users);
+    const [users, lastActivity] = await Promise.all([nc.getUsers(), nc.getLastDMActivity()]);
+    cachedUsers = users.filter(u => u.uuid !== myProfile?.uuid);
+    renderDMList(cachedUsers, lastActivity || {});
   });
 
   nc.on('message:incoming', async msg => {
