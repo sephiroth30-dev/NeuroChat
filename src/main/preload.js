@@ -56,8 +56,10 @@ contextBridge.exposeInMainWorld('neurochat', {
   deleteDMConversation: peerUuid => ipcRenderer.invoke('dm:delete', peerUuid),
   getHiddenDMs: () => ipcRenderer.invoke('dm:hidden'),
 
-  // Channel info
+  // Channel info & member management
   getChannelInfo: channelId => ipcRenderer.invoke('channels:info', channelId),
+  addChannelMember: (channelId, userUuid) => ipcRenderer.invoke('channels:addMember', { channelId, userUuid }),
+  removeChannelMember: (channelId, userUuid) => ipcRenderer.invoke('channels:removeMember', { channelId, userUuid }),
 
   // Read receipts
   markRead: (messageId, senderUuid) => ipcRenderer.invoke('read:mark', { messageId, senderUuid }),

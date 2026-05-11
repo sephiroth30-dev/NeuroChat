@@ -323,14 +323,40 @@ function register() {
 
   ipcMain.handle('dm:hidden', () => db.getHiddenDMs());
 
-  // ── Channel info ───────────────────────────────────────────────────────────
+  // ── Channel info & member management ──────────────────────────────────────
 
   ipcMain.handle('channels:info', (_e, channelId) => {
     const channel = db.getChannel(channelId);
-    const onlineUsers = store.getOnlineUsers();
     const profile = db.getProfile();
-    const members = profile ? [profile, ...onlineUsers.filter(u => u.uuid !== profile.uuid)] : onlineUsers;
-    return { channel, members };
+    const onlineMap = new Map(store.getOnlineUsers().map(u => [u.uuid, u]));
+
+    // Members stored in channel_members + merge online status
+    const storedMembers = db.getChannelMembers(channelId);
+    const members = storedMembers.map(m => ({
+      ...m,
+      is_online: onlineMap.has(m.uuid) ? 1 : (profile?.uuid === m.uuid ? 1 : 0),
+    }));
+
+    // All known users not yet in channel (for the "add member" picker)
+    const allUsers = db.getAllUsers();
+    const memberSet = new Set(members.map(m => m.uuid));
+    const nonMembers = [
+      ...(profile && !memberSet.has(profile.uuid) ? [profile] : []),
+      ...allUsers.filter(u => !memberSet.has(u.uuid)),
+    ];
+
+    return { channel, members, nonMembers };
+  });
+
+  ipcMain.handle('channels:addMember', (_e, { channelId, userUuid }) => {
+    const profile = db.getProfile();
+    db.addChannelMember(channelId, userUuid, profile?.uuid || null);
+    return { ok: true };
+  });
+
+  ipcMain.handle('channels:removeMember', (_e, { channelId, userUuid }) => {
+    db.removeChannelMember(channelId, userUuid);
+    return { ok: true };
   });
 
   // ── Read receipts ──────────────────────────────────────────────────────────

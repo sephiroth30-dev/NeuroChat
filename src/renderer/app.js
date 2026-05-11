@@ -757,45 +757,94 @@ function showDMMenu(e, user) {
 
 // ── Channel info modal ────────────────────────────────────────────────────────
 
-async function showChannelInfoModal(channelId) {
-  const { channel, members } = await nc.getChannelInfo(channelId);
-  if (!channel) return;
+function memberAvatar(m) {
+  const initials = (m.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const statusClass = m.is_online ? m.status || 'available' : 'offline';
+  const statusLabel = STATUS_TITLES[statusClass] || 'Desconectado';
+  return `
+    <div class="avatar-wrap" style="flex-shrink:0">
+      <div class="avatar small" style="background:${m.color || '#4A9E8F'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">${initials}</div>
+      <span class="avatar-status ${statusClass}" title="${statusLabel}"></span>
+    </div>`;
+}
 
+async function showChannelInfoModal(channelId) {
   const existing = document.getElementById('channel-info-modal');
   if (existing) existing.remove();
+
+  const { channel, members, nonMembers } = await nc.getChannelInfo(channelId);
+  if (!channel) return;
 
   const overlay = document.createElement('div');
   overlay.id = 'channel-info-modal';
   overlay.className = 'modal-overlay';
-  overlay.innerHTML = `
-    <div class="modal-box">
-      <div class="modal-header">
-        <span class="modal-title"># ${escHtml(channel.name)}</span>
-        <button class="modal-close" id="close-ch-info">✕</button>
-      </div>
-      ${channel.description ? `<p class="modal-desc">${escHtml(channel.description)}</p>` : ''}
-      <div class="modal-section-title">Integrantes (${members.length})</div>
-      <ul class="modal-member-list">
-        ${members.map(m => {
-          const statusClass = m.is_online ? m.status || 'available' : 'offline';
-          const statusLabel = STATUS_TITLES[statusClass] || 'Desconectado';
-          const initials = (m.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-          return `<li class="modal-member">
-            <div class="avatar-wrap" style="flex-shrink:0">
-              <div class="avatar small" style="background:${m.color || '#4A9E8F'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">${initials}</div>
-              <span class="avatar-status ${statusClass}" title="${statusLabel}"></span>
-            </div>
-            <span class="modal-member-name">${escHtml(m.name)}</span>
-            <span class="modal-member-status">${statusLabel}</span>
-          </li>`;
-        }).join('')}
-      </ul>
-    </div>
-  `;
 
+  function renderModal() {
+    const myUuid = myProfile?.uuid;
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:420px">
+        <div class="modal-header">
+          <span class="modal-title"># ${escHtml(channel.name)}</span>
+          <button class="modal-close" id="close-ch-info">✕</button>
+        </div>
+        ${channel.description ? `<p class="modal-desc">${escHtml(channel.description)}</p>` : ''}
+
+        <div class="modal-section-title">Integrantes (${members.length})</div>
+        <ul class="modal-member-list" id="ch-member-list">
+          ${members.map(m => `
+            <li class="modal-member" data-uuid="${m.uuid}">
+              ${memberAvatar(m)}
+              <div style="flex:1;min-width:0">
+                <span class="modal-member-name">${escHtml(m.name)}</span>
+                ${m.status_message ? `<span class="dm-status-msg">${escHtml(m.status_message)}</span>` : ''}
+              </div>
+              ${m.uuid !== myUuid ? `<button class="btn-remove-member" data-uuid="${m.uuid}" title="Quitar del canal">✕</button>` : '<span style="font-size:11px;color:var(--nc-text-2)">Tú</span>'}
+            </li>`).join('')}
+        </ul>
+
+        ${nonMembers.length ? `
+          <div class="modal-section-title" style="margin-top:12px">Agregar integrante</div>
+          <div class="modal-add-member">
+            <select class="form-input" id="add-member-select" style="flex:1">
+              <option value="">Seleccionar usuario…</option>
+              ${nonMembers.map(u => `<option value="${u.uuid}">${escHtml(u.name)}</option>`).join('')}
+            </select>
+            <button class="btn btn-primary" id="add-member-btn" style="white-space:nowrap">Agregar</button>
+          </div>` : ''}
+      </div>`;
+
+    document.getElementById('close-ch-info').onclick = () => overlay.remove();
+    overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+
+    // Remove member buttons
+    overlay.querySelectorAll('.btn-remove-member').forEach(btn => {
+      btn.onclick = async () => {
+        await nc.removeChannelMember(channelId, btn.dataset.uuid);
+        const idx = members.findIndex(m => m.uuid === btn.dataset.uuid);
+        if (idx !== -1) {
+          nonMembers.push(members.splice(idx, 1)[0]);
+        }
+        renderModal();
+      };
+    });
+
+    // Add member
+    const addBtn = document.getElementById('add-member-btn');
+    if (addBtn) {
+      addBtn.onclick = async () => {
+        const sel = document.getElementById('add-member-select');
+        const uuid = sel.value;
+        if (!uuid) return;
+        await nc.addChannelMember(channelId, uuid);
+        const idx = nonMembers.findIndex(u => u.uuid === uuid);
+        if (idx !== -1) members.push(nonMembers.splice(idx, 1)[0]);
+        renderModal();
+      };
+    }
+  }
+
+  renderModal();
   document.body.appendChild(overlay);
-  document.getElementById('close-ch-info').onclick = () => overlay.remove();
-  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
 }
 
 // ── Reply ─────────────────────────────────────────────────────────────────────
@@ -821,9 +870,21 @@ function startEdit(msg) {
   editingId = msg.id;
   const input = $('message-input');
   input.textContent = msg.content;
+  $('edit-preview-text').textContent = msg.content;
+  $('edit-preview').classList.remove('hidden');
+  $('reply-preview').classList.add('hidden'); // cancelar reply si hubiera
+  replyingTo = null;
   input.focus();
   placeCursorAtEnd(input);
 }
+
+function cancelEdit() {
+  editingId = null;
+  $('edit-preview').classList.add('hidden');
+  $('message-input').textContent = '';
+}
+
+$('cancel-edit-btn').onclick = cancelEdit;
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 async function deleteMessage(msg) {
@@ -886,6 +947,7 @@ async function sendMessage() {
   if (editingId) {
     await nc.editMessage(editingId, content);
     editingId = null;
+    $('edit-preview').classList.add('hidden');
     await loadMessages();
     return;
   }
@@ -1212,9 +1274,14 @@ function subscribeIPCEvents() {
   });
 
   nc.on('message:read', ({ messageId }) => {
-    // Update ✓✓ → blue ✓✓ without a full reload
+    // Instant DOM update for the visible tick
     const statusEl = document.querySelector(`.msg-row[data-id="${messageId}"] .msg-status`);
-    if (statusEl) statusEl.classList.add('read');
+    if (statusEl) {
+      statusEl.classList.add('read');
+    } else if (currentChat) {
+      // Message not in current view — reload to sync DB state
+      loadMessages();
+    }
   });
 
   nc.on('status:set-from-tray', status => {

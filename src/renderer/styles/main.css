@@ -463,3 +463,31 @@ img {
   font-size: 12px;
   color: var(--nc-text-2);
 }
+
+/* ─── Edit mode indicator ────────────────────────────────────────────────── */
+.edit-mode .reply-preview-name {
+  color: var(--nc-primary);
+  font-weight: 600;
+}
+
+/* ─── Channel info modal — add member row ───────────────────────────────── */
+.modal-add-member {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.btn-remove-member {
+  background: none;
+  border: none;
+  color: var(--nc-text-2);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.btn-remove-member:hover {
+  color: var(--nc-danger, #e05a5a);
+  background: color-mix(in srgb, var(--nc-danger, #e05a5a) 10%, transparent);
+}

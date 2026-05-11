@@ -4,7 +4,7 @@ const path = require('path');
 const { app } = require('electron');
 const Database = require('better-sqlite3');
 
-const _DB_VERSION = 4;
+const _DB_VERSION = 5;
 let db = null;
 
 function getDbPath() {
@@ -107,6 +107,16 @@ function createSchema() {
     CREATE INDEX IF NOT EXISTS idx_reactions_msg ON reactions(message_id);
     CREATE INDEX IF NOT EXISTS idx_files_msg ON files(message_id);
     CREATE INDEX IF NOT EXISTS idx_pinned_channel ON pinned_messages(channel_id);
+
+    CREATE TABLE IF NOT EXISTS channel_members (
+      channel_id TEXT NOT NULL,
+      user_uuid  TEXT NOT NULL,
+      added_by   TEXT,
+      added_at   INTEGER NOT NULL,
+      PRIMARY KEY (channel_id, user_uuid)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ch_members ON channel_members(channel_id);
   `);
 }
 
@@ -141,6 +151,25 @@ function runMigrations() {
       db.exec("ALTER TABLE users ADD COLUMN status_message TEXT DEFAULT ''");
     } catch {}
     db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(4);
+  }
+
+  if (current < 5) {
+    // Seed all existing channels with all known users as initial members
+    const profile = getProfile();
+    const now = Date.now();
+    const channels = db.prepare('SELECT id FROM channels').all();
+    const users = db.prepare('SELECT uuid FROM users').all();
+    const insert = db.prepare(
+      'INSERT OR IGNORE INTO channel_members (channel_id, user_uuid, added_by, added_at) VALUES (?, ?, ?, ?)'
+    );
+    const addSelf = db.prepare(
+      'INSERT OR IGNORE INTO channel_members (channel_id, user_uuid, added_by, added_at) VALUES (?, ?, ?, ?)'
+    );
+    channels.forEach(ch => {
+      if (profile) addSelf.run(ch.id, profile.uuid, profile.uuid, now);
+      users.forEach(u => insert.run(ch.id, u.uuid, profile?.uuid || null, now));
+    });
+    db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(5);
   }
 }
 
@@ -418,6 +447,32 @@ function searchMessages(query, opts = {}) {
   return db.prepare(sql).all(...params);
 }
 
+// ── Channel members ───────────────────────────────────────────────────────────
+
+function getChannelMembers(channelId) {
+  return db.prepare(`
+    SELECT u.uuid, u.name, u.avatar, u.color, u.status, u.status_message, u.is_online
+    FROM channel_members cm
+    JOIN users u ON u.uuid = cm.user_uuid
+    WHERE cm.channel_id = ?
+    ORDER BY u.name
+  `).all(channelId);
+}
+
+function addChannelMember(channelId, userUuid, addedBy) {
+  db.prepare(
+    'INSERT OR IGNORE INTO channel_members (channel_id, user_uuid, added_by, added_at) VALUES (?, ?, ?, ?)'
+  ).run(channelId, userUuid, addedBy, Date.now());
+}
+
+function removeChannelMember(channelId, userUuid) {
+  db.prepare('DELETE FROM channel_members WHERE channel_id = ? AND user_uuid = ?').run(channelId, userUuid);
+}
+
+function isChannelMember(channelId, userUuid) {
+  return !!db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_uuid = ?').get(channelId, userUuid);
+}
+
 // ── Default channels seed (runs on every init, idempotent) ───────────────────
 
 function seedDefaultChannels() {
@@ -501,4 +556,8 @@ module.exports = {
   getHiddenDMs,
   setHiddenDM,
   getLastDMTimestamps,
+  getChannelMembers,
+  addChannelMember,
+  removeChannelMember,
+  isChannelMember,
 };
