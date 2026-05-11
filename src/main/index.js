@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, nativeTheme, shell } = require('electron');
+const { app, BrowserWindow, nativeTheme, shell, powerMonitor } = require('electron');
 
 // Prevent multiple instances
 const gotLock = app.requestSingleInstanceLock();
@@ -44,6 +44,26 @@ app.whenReady().then(async () => {
 
   // Init tray icon
   tray.init(win);
+
+  // System idle → auto-away after 15 min
+  const IDLE_AWAY_SECONDS = 15 * 60;
+  let idleAwayTriggered = false;
+  setInterval(() => {
+    const idle = powerMonitor.getSystemIdleTime();
+    if (idle >= IDLE_AWAY_SECONDS && !idleAwayTriggered) {
+      idleAwayTriggered = true;
+      win.webContents.send('system:idle');
+    } else if (idle < 60 && idleAwayTriggered) {
+      idleAwayTriggered = false;
+      win.webContents.send('system:active');
+    }
+  }, 30_000);
+
+  powerMonitor.on('lock-screen', () => win.webContents.send('system:idle'));
+  powerMonitor.on('unlock-screen', () => {
+    idleAwayTriggered = false;
+    win.webContents.send('system:active');
+  });
 
   // nativeTheme.themeSource was set above — Chromium's prefers-color-scheme updates
   // automatically, so CSS @media handles all theme switching without extra IPC events.

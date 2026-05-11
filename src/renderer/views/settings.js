@@ -139,6 +139,14 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
         <div class="settings-section">
           <h3>Avatar</h3>
           <div class="card">
+            <div class="avatar-preview-row" id="avatar-preview-row">
+              <div class="avatar-preview" id="avatar-preview" style="background:${color}">
+                ${profile?.avatar?.startsWith('nc-avatar:')
+                  ? AVATAR_CATEGORIES.flatMap(c=>c.icons).find(i=>i.id===profile.avatar.slice(10))?.svg || ''
+                  : `<span style="font-size:22px;font-weight:700;color:#fff">${(profile?.name||'?').charAt(0).toUpperCase()}</span>`}
+              </div>
+              <span class="avatar-preview-hint">Selecciona un icono abajo y guarda el perfil</span>
+            </div>
             <div class="avatar-gallery" id="avatar-gallery">
               ${avatarGalleryHtml}
             </div>
@@ -271,11 +279,19 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
   const gallery = container.querySelector('#avatar-gallery');
   const colorInput = container.querySelector('#s-color');
 
-  colorInput.oninput = () => {
-    gallery
-      .querySelectorAll('.avatar-option')
-      .forEach(el => (el.style.background = colorInput.value));
-  };
+  const avatarPreview = container.querySelector('#avatar-preview');
+
+  function updatePreview() {
+    const c = colorInput.value;
+    avatarPreview.style.background = c;
+    gallery.querySelectorAll('.avatar-option').forEach(el => (el.style.background = c));
+    if (selectedAvatarId) {
+      const icon = AVATAR_CATEGORIES.flatMap(cat => cat.icons).find(i => i.id === selectedAvatarId);
+      avatarPreview.innerHTML = icon ? icon.svg : '';
+    }
+  }
+
+  colorInput.oninput = () => updatePreview();
 
   gallery.addEventListener('click', e => {
     const opt = e.target.closest('.avatar-option');
@@ -283,6 +299,7 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
     selectedAvatarId = opt.dataset.avatarId;
     gallery.querySelectorAll('.avatar-option').forEach(el => el.classList.remove('selected'));
     opt.classList.add('selected');
+    updatePreview();
   });
 
   // Save profile (name + mood + color + avatar)

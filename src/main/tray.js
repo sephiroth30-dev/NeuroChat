@@ -80,7 +80,12 @@ function init(mainWindow) {
 
   let icon;
   try {
-    icon = nativeImage.createFromPath(path.join(__dirname, '../../assets/tray-icon.ico'));
+    if (process.platform === 'darwin') {
+      icon = nativeImage.createFromPath(path.join(__dirname, '../../assets/tray-template.png'));
+      icon.setTemplateImage(true);
+    } else {
+      icon = nativeImage.createFromPath(path.join(__dirname, '../../assets/tray-icon.ico'));
+    }
   } catch (_) {
     icon = nativeImage.createEmpty();
   }

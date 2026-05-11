@@ -82,42 +82,30 @@ async function boot() {
 
 // ── Auto-away (10 min inactivity) ─────────────────────────────────────────────
 function setupAutoAway() {
-  const AUTO_AWAY_MS = 10 * 60 * 1000;
-  let awayTimer = null;
   let wasAutoAway = false;
 
-  function onActivity() {
-    // Restore to available if auto-away was applied
-    if (wasAutoAway && myProfile?.status === 'away') {
-      wasAutoAway = false;
-      nc.setStatus('available').then(() => {
-        myProfile = { ...myProfile, status: 'available' };
-        renderOwnProfile();
-      });
-    }
-    resetTimer();
+  function goAway() {
+    if (myProfile?.status === 'dnd' || myProfile?.status === 'invisible') return;
+    if (myProfile?.status !== 'available') return;
+    wasAutoAway = true;
+    nc.setStatus('away').then(() => {
+      myProfile = { ...myProfile, status: 'away' };
+      renderOwnProfile();
+    });
   }
 
-  function resetTimer() {
-    clearTimeout(awayTimer);
-    // Only schedule if user hasn't manually set dnd/invisible
-    if (myProfile?.status !== 'dnd' && myProfile?.status !== 'invisible') {
-      awayTimer = setTimeout(() => {
-        if (myProfile?.status === 'available') {
-          wasAutoAway = true;
-          nc.setStatus('away').then(() => {
-            myProfile = { ...myProfile, status: 'away' };
-            renderOwnProfile();
-          });
-        }
-      }, AUTO_AWAY_MS);
-    }
+  function comeBack() {
+    if (!wasAutoAway) return;
+    wasAutoAway = false;
+    nc.setStatus('available').then(() => {
+      myProfile = { ...myProfile, status: 'available' };
+      renderOwnProfile();
+    });
   }
 
-  document.addEventListener('mousemove', onActivity, { passive: true });
-  document.addEventListener('keydown', onActivity, { passive: true });
-  document.addEventListener('click', onActivity, { passive: true });
-  resetTimer();
+  // System-level idle detection (fires from main process via powerMonitor)
+  nc.on('system:idle', () => goAway());
+  nc.on('system:active', () => comeBack());
 }
 
 // ── Sound notification ────────────────────────────────────────────────────────
@@ -414,6 +402,16 @@ async function openChat(chat) {
   // Header
   $('chat-title').textContent = chat.type === 'channel' ? `# ${chat.name}` : chat.name;
   $('chat-subtitle').textContent = chat.type === 'channel' ? 'Canal' : 'Mensaje directo';
+
+  // Show/hide channel info button
+  const chInfoBtn = $('channel-info-btn');
+  if (chat.type === 'channel') {
+    chInfoBtn.classList.remove('hidden');
+    chInfoBtn.onclick = () => showChannelInfoModal(chat.id);
+  } else {
+    chInfoBtn.classList.add('hidden');
+    chInfoBtn.onclick = null;
+  }
 
   // Avatar header
   const avatarEl = $('chat-avatar');

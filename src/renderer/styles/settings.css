@@ -116,6 +116,34 @@
   transform: translateX(20px);
 }
 
+/* Avatar preview row */
+.avatar-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px 0;
+}
+.avatar-preview {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--nc-shadow);
+  transition: background var(--nc-transition);
+}
+.avatar-preview svg {
+  width: 32px;
+  height: 32px;
+}
+.avatar-preview-hint {
+  font-size: 12px;
+  color: var(--nc-text-2);
+  line-height: 1.4;
+}
+
 /* Avatar gallery */
 .avatar-gallery {
   display: flex;
@@ -166,7 +194,8 @@
 }
 .avatar-option.selected {
   border-color: white;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nc-primary) 40%, transparent);
+  box-shadow: 0 0 0 4px var(--nc-primary), 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: scale(1.1);
 }
 
 /* Theme selector */
