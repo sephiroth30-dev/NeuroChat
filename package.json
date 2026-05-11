@@ -8,9 +8,10 @@
   "private": true,
   "scripts": {
     "start": "ELECTRON_RUN_AS_NODE= electron .",
-    "build": "electron-builder",
+    "build": "electron-builder --win && electron-builder --mac",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
+    "build:all": "electron-builder --win && electron-builder --mac",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
