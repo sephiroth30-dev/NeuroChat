@@ -812,6 +812,7 @@ async function showChannelInfoModal(channelId) {
 
   function renderModal() {
     const myUuid = myProfile?.uuid;
+    const onlineCount = members.filter(m => m.is_online).length;
     overlay.innerHTML = `
       <div class="modal-box" style="max-width:420px">
         <div class="modal-header">
@@ -820,7 +821,11 @@ async function showChannelInfoModal(channelId) {
         </div>
         ${channel.description ? `<p class="modal-desc">${escHtml(channel.description)}</p>` : ''}
 
-        <div class="modal-section-title">Integrantes (${members.length})</div>
+        <div class="modal-section-title">
+          Usuarios en la red
+          <span style="font-weight:400;margin-left:6px">${onlineCount} conectado${onlineCount !== 1 ? 's' : ''} · ${members.length} total</span>
+        </div>
+        ${members.length === 0 ? `<p style="padding:12px 20px;color:var(--nc-text-2);font-size:13px;">Ningún usuario detectado en la red.</p>` : ''}
         <ul class="modal-member-list" id="ch-member-list">
           ${members.map(m => `
             <li class="modal-member" data-uuid="${m.uuid}">
@@ -829,49 +834,17 @@ async function showChannelInfoModal(channelId) {
                 <span class="modal-member-name">${escHtml(m.name)}</span>
                 ${m.status_message ? `<span class="dm-status-msg">${escHtml(m.status_message)}</span>` : ''}
               </div>
-              ${m.uuid !== myUuid ? `<button class="btn-remove-member" data-uuid="${m.uuid}" title="Quitar del canal">✕</button>` : '<span style="font-size:11px;color:var(--nc-text-2)">Tú</span>'}
+              ${m.uuid === myUuid
+                ? '<span style="font-size:11px;color:var(--nc-text-2)">Tú</span>'
+                : m.is_online
+                  ? '<span style="font-size:11px;color:var(--nc-online)">Conectado</span>'
+                  : '<span style="font-size:11px;color:var(--nc-text-2)">Desconectado</span>'}
             </li>`).join('')}
         </ul>
-
-        ${nonMembers.length ? `
-          <div class="modal-section-title" style="margin-top:12px">Agregar integrante</div>
-          <div class="modal-add-member">
-            <select class="form-input" id="add-member-select" style="flex:1">
-              <option value="">Seleccionar usuario…</option>
-              ${nonMembers.map(u => `<option value="${u.uuid}">${escHtml(u.name)}</option>`).join('')}
-            </select>
-            <button class="btn btn-primary" id="add-member-btn" style="white-space:nowrap">Agregar</button>
-          </div>` : ''}
       </div>`;
 
     document.getElementById('close-ch-info').onclick = () => overlay.remove();
     overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
-
-    // Remove member buttons
-    overlay.querySelectorAll('.btn-remove-member').forEach(btn => {
-      btn.onclick = async () => {
-        await nc.removeChannelMember(channelId, btn.dataset.uuid);
-        const idx = members.findIndex(m => m.uuid === btn.dataset.uuid);
-        if (idx !== -1) {
-          nonMembers.push(members.splice(idx, 1)[0]);
-        }
-        renderModal();
-      };
-    });
-
-    // Add member
-    const addBtn = document.getElementById('add-member-btn');
-    if (addBtn) {
-      addBtn.onclick = async () => {
-        const sel = document.getElementById('add-member-select');
-        const uuid = sel.value;
-        if (!uuid) return;
-        await nc.addChannelMember(channelId, uuid);
-        const idx = nonMembers.findIndex(u => u.uuid === uuid);
-        if (idx !== -1) members.push(nonMembers.splice(idx, 1)[0]);
-        renderModal();
-      };
-    }
   }
 
   renderModal();

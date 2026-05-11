@@ -48,10 +48,6 @@ function buildPayload() {
   const ifaces = getNetworkInterfaces();
   if (!ifaces.length) return null;
 
-  // invisible users broadcast as 'offline' so peers can still message them
-  const broadcastStatus =
-    myProfile.status === 'invisible' ? 'offline' : myProfile.status || 'available';
-
   return Buffer.from(
     JSON.stringify({
       type: 'NEUROCHAT_ANNOUNCE',
@@ -59,7 +55,7 @@ function buildPayload() {
       name: myProfile.name,
       avatar: myProfile.avatar || null,
       color: myProfile.color || '#4A9E8F',
-      status: broadcastStatus,
+      status: myProfile.status || 'available',
       statusMessage: myProfile.status_message || '',
       wsPort: 45679,
       ip: ifaces[0].ip,
@@ -70,6 +66,7 @@ function buildPayload() {
 
 function broadcast() {
   if (!socket || !myProfile) return;
+  if (myProfile.status === 'invisible') return; // no emite — aparece desconectado
 
   const payload = buildPayload();
   if (!payload) return;

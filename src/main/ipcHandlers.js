@@ -328,24 +328,34 @@ function register() {
   ipcMain.handle('channels:info', (_e, channelId) => {
     const channel = db.getChannel(channelId);
     const profile = db.getProfile();
-    const onlineMap = new Map(store.getOnlineUsers().map(u => [u.uuid, u]));
+    const onlineUsers = store.getOnlineUsers();
+    const onlineMap = new Map(onlineUsers.map(u => [u.uuid, u]));
+    const allDbUsers = db.getAllUsers();
 
-    // Members stored in channel_members + merge online status
-    const storedMembers = db.getChannelMembers(channelId);
-    const members = storedMembers.map(m => ({
-      ...m,
-      is_online: onlineMap.has(m.uuid) ? 1 : (profile?.uuid === m.uuid ? 1 : 0),
+    // Build full user list: all DB users + online users not yet in DB, deduped
+    const allUsersMap = new Map();
+    if (profile) allUsersMap.set(profile.uuid, profile);
+    allDbUsers.forEach(u => allUsersMap.set(u.uuid, u));
+    onlineUsers.forEach(u => {
+      if (!allUsersMap.has(u.uuid)) allUsersMap.set(u.uuid, u);
+    });
+
+    // Merge online status into every user
+    const allUsers = Array.from(allUsersMap.values()).map(u => ({
+      ...u,
+      is_online: onlineMap.has(u.uuid) || (profile?.uuid === u.uuid) ? 1 : 0,
+      status: onlineMap.get(u.uuid)?.status || u.status || 'offline',
     }));
 
-    // All known users not yet in channel (for the "add member" picker)
-    const allUsers = db.getAllUsers();
-    const memberSet = new Set(members.map(m => m.uuid));
-    const nonMembers = [
-      ...(profile && !memberSet.has(profile.uuid) ? [profile] : []),
-      ...allUsers.filter(u => !memberSet.has(u.uuid)),
-    ];
+    // Sort: self first, then online, then by name
+    allUsers.sort((a, b) => {
+      if (a.uuid === profile?.uuid) return -1;
+      if (b.uuid === profile?.uuid) return 1;
+      if (a.is_online !== b.is_online) return b.is_online - a.is_online;
+      return (a.name || '').localeCompare(b.name || '');
+    });
 
-    return { channel, members, nonMembers };
+    return { channel, members: allUsers, nonMembers: [] };
   });
 
   ipcMain.handle('channels:addMember', (_e, { channelId, userUuid }) => {
