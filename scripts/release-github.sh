@@ -15,8 +15,10 @@ VERSION=$(node -p "require('./package.json').version")
 TAG="v${VERSION}"
 DIST_DIR="dist"
 
-EXE=$(find "$DIST_DIR" -maxdepth 1 -name "NeuroChat Setup *.exe" | head -1)
-DMG=$(find "$DIST_DIR" -maxdepth 1 -name "NeuroChat-*.dmg" | head -1)
+EXE="${DIST_DIR}/NeuroChat Setup ${VERSION}.exe"
+DMG="${DIST_DIR}/NeuroChat-${VERSION}.dmg"
+[ ! -f "$EXE" ] && EXE=$(find "$DIST_DIR" -maxdepth 1 -name "NeuroChat Setup *.exe" | sort -V | tail -1)
+[ ! -f "$DMG" ] && DMG=$(find "$DIST_DIR" -maxdepth 1 -name "NeuroChat-*.dmg" | sort -V | tail -1)
 
 if [ -z "$EXE" ] && [ -z "$DMG" ]; then
   echo "ERROR: No .exe or .dmg found in $DIST_DIR. Run 'npm run build:win' and/or 'npm run build:mac' first."
