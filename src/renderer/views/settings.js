@@ -87,15 +87,12 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
 
   const color = profile?.color || '#4A9E8F';
 
-  const avatarGalleryHtml = AVATAR_CATEGORIES.map(({ cat, icons }) => {
-    const iconHtml = icons
-      .map(({ id, label, svg }) => {
-        const selected = profile?.avatar === `nc-avatar:${id}`;
-        return `<div class="avatar-option${selected ? ' selected' : ''}" data-avatar-id="${id}" style="background:${color}" title="${label}">${svg}</div>`;
-      })
-      .join('');
-    return `<div class="avatar-cat"><span class="avatar-cat-label">${cat}</span><div class="avatar-cat-icons">${iconHtml}</div></div>`;
-  }).join('');
+  const allIconsHtml = AVATAR_CATEGORIES.flatMap(({ icons }) => icons)
+    .map(({ id, label, svg }) => {
+      const selected = profile?.avatar === `nc-avatar:${id}`;
+      return `<div class="avatar-option${selected ? ' selected' : ''}" data-avatar-id="${id}" style="background:${color}" title="${label}">${svg}</div>`;
+    }).join('');
+  const avatarGalleryHtml = allIconsHtml;
 
   container.innerHTML = `
     <div class="settings-view">
@@ -141,13 +138,21 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
           <div class="card">
             <div class="avatar-preview-row" id="avatar-preview-row">
               <div class="avatar-preview" id="avatar-preview" style="background:${color}">
-                ${profile?.avatar?.startsWith('nc-avatar:')
-                  ? AVATAR_CATEGORIES.flatMap(c=>c.icons).find(i=>i.id===profile.avatar.slice(10))?.svg || ''
-                  : `<span style="font-size:22px;font-weight:700;color:#fff">${(profile?.name||'?').charAt(0).toUpperCase()}</span>`}
+                ${profile?.avatar?.startsWith('data:')
+                  ? `<img src="${profile.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`
+                  : profile?.avatar?.startsWith('nc-avatar:')
+                    ? AVATAR_CATEGORIES.flatMap(c=>c.icons).find(i=>i.id===profile.avatar.slice(10))?.svg || ''
+                    : `<span style="font-size:22px;font-weight:700;color:#fff">${(profile?.name||'?').charAt(0).toUpperCase()}</span>`}
               </div>
-              <span class="avatar-preview-hint">Selecciona un icono abajo y guarda el perfil</span>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <span class="avatar-preview-hint">Selecciona un ícono o sube una foto</span>
+                <button class="btn btn-ghost" id="upload-avatar-btn" style="font-size:12px;padding:5px 12px">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  Subir foto
+                </button>
+              </div>
             </div>
-            <div class="avatar-gallery" id="avatar-gallery">
+            <div class="avatar-gallery avatar-gallery-flat" id="avatar-gallery">
               ${avatarGalleryHtml}
             </div>
           </div>
@@ -271,21 +276,23 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
   // Back
   container.querySelector('#back-btn').onclick = onBack;
 
-  // Avatar selection — update gallery colors when color changes, save on click
+  // Avatar selection
   let selectedAvatarId = profile?.avatar?.startsWith('nc-avatar:')
     ? profile.avatar.slice(10)
     : null;
+  let customAvatarDataUrl = profile?.avatar?.startsWith('data:') ? profile.avatar : null;
 
   const gallery = container.querySelector('#avatar-gallery');
   const colorInput = container.querySelector('#s-color');
-
   const avatarPreview = container.querySelector('#avatar-preview');
 
   function updatePreview() {
     const c = colorInput.value;
     avatarPreview.style.background = c;
     gallery.querySelectorAll('.avatar-option').forEach(el => (el.style.background = c));
-    if (selectedAvatarId) {
+    if (customAvatarDataUrl) {
+      avatarPreview.innerHTML = `<img src="${customAvatarDataUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`;
+    } else if (selectedAvatarId) {
       const icon = AVATAR_CATEGORIES.flatMap(cat => cat.icons).find(i => i.id === selectedAvatarId);
       avatarPreview.innerHTML = icon ? icon.svg : '';
     }
@@ -297,10 +304,20 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
     const opt = e.target.closest('.avatar-option');
     if (!opt) return;
     selectedAvatarId = opt.dataset.avatarId;
+    customAvatarDataUrl = null;
     gallery.querySelectorAll('.avatar-option').forEach(el => el.classList.remove('selected'));
     opt.classList.add('selected');
     updatePreview();
   });
+
+  container.querySelector('#upload-avatar-btn').onclick = async () => {
+    const dataUrl = await nc.chooseAvatar();
+    if (!dataUrl) return;
+    customAvatarDataUrl = dataUrl;
+    selectedAvatarId = null;
+    gallery.querySelectorAll('.avatar-option').forEach(el => el.classList.remove('selected'));
+    updatePreview();
+  };
 
   // Save profile (name + mood + color + avatar)
   container.querySelector('#save-profile-btn').onclick = async () => {
@@ -308,12 +325,17 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
     const mood = container.querySelector('#s-mood').value.trim();
     const col = container.querySelector('#s-color').value;
     if (!name) return;
+    const avatarVal = customAvatarDataUrl
+      ? customAvatarDataUrl
+      : selectedAvatarId
+        ? `nc-avatar:${selectedAvatarId}`
+        : profile?.avatar || null;
     const updated = await nc.saveProfile({
       ...profile,
       name,
       color: col,
       status_message: mood,
-      avatar: selectedAvatarId ? `nc-avatar:${selectedAvatarId}` : profile?.avatar || null,
+      avatar: avatarVal,
     });
     if (mood !== (profile?.status_message || '')) await nc.setStatusMessage(mood);
     onProfileSaved(updated);

@@ -23,7 +23,7 @@ function createMainWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false, // needed for preload to require node modules
+      sandbox: false,
       spellcheck: false,
     },
   });
@@ -34,12 +34,18 @@ function createMainWindow() {
     mainWindow.show();
   });
 
-  // Minimize to tray instead of closing
+  // X button → hide to tray instead of closing
   mainWindow.on('close', e => {
     if (!isQuitting) {
       e.preventDefault();
       mainWindow.hide();
     }
+  });
+
+  // Minimize button → also hide to tray (keeps taskbar clean)
+  mainWindow.on('minimize', e => {
+    e.preventDefault();
+    mainWindow.hide();
   });
 
   mainWindow.on('closed', () => {
@@ -50,16 +56,21 @@ function createMainWindow() {
 }
 
 function showMainWindow() {
-  if (mainWindow) {
-    mainWindow.show();
-    mainWindow.focus();
-  } else {
+  if (!mainWindow) {
     createMainWindow();
+    return;
   }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
 }
 
 function getMainWindow() {
   return mainWindow;
 }
 
-module.exports = { createMainWindow, showMainWindow, getMainWindow };
+function getIsQuitting() {
+  return isQuitting;
+}
+
+module.exports = { createMainWindow, showMainWindow, getMainWindow, getIsQuitting };

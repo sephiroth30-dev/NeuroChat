@@ -144,12 +144,18 @@
   line-height: 1.4;
 }
 
-/* Avatar gallery */
+/* Avatar gallery — flat horizontal responsive grid */
 .avatar-gallery {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 16px 20px;
+}
+.avatar-gallery.avatar-gallery-flat {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 20px;
 }
 .avatar-cat-label {
   display: block;

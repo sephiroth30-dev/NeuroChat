@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('neurochat', {
   rejectFile: transferId => ipcRenderer.invoke('file:reject', transferId),
   openFile: localPath => ipcRenderer.invoke('file:open', localPath),
   chooseDownloadDir: () => ipcRenderer.invoke('file:chooseDir'),
+  chooseAvatar: () => ipcRenderer.invoke('file:chooseAvatar'),
 
   // Search
   search: (query, opts) => ipcRenderer.invoke('search:query', query, opts),

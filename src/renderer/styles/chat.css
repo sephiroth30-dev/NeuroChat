@@ -155,6 +155,9 @@
 /* Message text */
 .msg-text {
   color: var(--nc-text);
+  text-align: justify;
+  hyphens: auto;
+  line-height: 1.5;
 }
 .msg-text strong {
   font-weight: 600;
@@ -258,30 +261,71 @@
 
 /* Context menu */
 .context-menu {
-  position: absolute;
+  position: fixed;
   background: var(--nc-sidebar);
   border: 1px solid var(--nc-border);
   border-radius: var(--nc-radius);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   z-index: 500;
-  min-width: 160px;
+  min-width: 170px;
   overflow: hidden;
+  padding: 4px 0;
 }
 .context-item {
-  padding: 9px 16px;
+  padding: 8px 14px;
   font-size: 13px;
   cursor: pointer;
   transition: background var(--nc-transition);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   color: var(--nc-text);
+  letter-spacing: 0.01em;
+}
+.context-item svg {
+  opacity: 0.65;
+  flex-shrink: 0;
 }
 .context-item:hover {
   background: var(--nc-input-bg);
 }
+.context-item:hover svg {
+  opacity: 1;
+}
 .context-item.danger {
   color: var(--nc-dnd);
+}
+.context-item.danger svg {
+  opacity: 0.8;
+}
+
+/* File download button */
+.file-download-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.35);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  z-index: 2;
+}
+.file-bubble:hover .file-download-btn {
+  opacity: 1;
+}
+.file-download-btn:hover {
+  background: rgba(0,0,0,0.55) !important;
+}
+.file-bubble {
+  position: relative;
 }
 
 /* Reaction picker popup */

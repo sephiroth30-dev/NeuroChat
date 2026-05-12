@@ -5,9 +5,9 @@ const os = require('os');
 const { app, BrowserWindow } = require('electron');
 
 const UDP_PORT = 45678;
-const BROADCAST_INTERVAL = 30_000; // 30 s
-const USER_TIMEOUT = 90_000; // 90 s sin señal → offline
-const TIMEOUT_CHECK = 15_000; // revisar cada 15 s
+const BROADCAST_INTERVAL = 10_000; // 10 s
+const USER_TIMEOUT = 35_000; // 35 s sin señal → offline
+const TIMEOUT_CHECK = 10_000; // revisar cada 10 s
 
 let socket = null;
 let broadcastInterval = null;
@@ -85,6 +85,15 @@ function handleMessage(msg, rinfo) {
   try {
     data = JSON.parse(msg.toString());
   } catch {
+    return;
+  }
+
+  if (data.type === 'NEUROCHAT_LEAVE') {
+    if (data.uuid && myProfile?.uuid !== data.uuid) {
+      store.setUserOffline(data.uuid);
+      db.setUserOffline(data.uuid);
+      scheduleNotify();
+    }
     return;
   }
 
@@ -183,6 +192,21 @@ function start() {
   });
 }
 
+function broadcastLeave() {
+  if (!socket || !myProfile) return;
+  const ifaces = getNetworkInterfaces();
+  if (!ifaces.length) return;
+  const payload = Buffer.from(JSON.stringify({
+    type: 'NEUROCHAT_LEAVE',
+    uuid: myProfile.uuid,
+  }));
+  for (const { broadcast: bcast } of ifaces) {
+    try {
+      socket.send(payload, 0, payload.length, UDP_PORT, bcast, () => {});
+    } catch (_) {}
+  }
+}
+
 function stop() {
   if (notifyTimer) {
     clearTimeout(notifyTimer);
@@ -196,6 +220,9 @@ function stop() {
     clearInterval(timeoutCheckInterval);
     timeoutCheckInterval = null;
   }
+
+  // Broadcast departure so peers mark us offline immediately
+  broadcastLeave();
 
   // Marcar todos los usuarios como offline al salir
   if (store && db) {

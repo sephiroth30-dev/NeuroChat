@@ -216,6 +216,20 @@ function register() {
   ipcMain.handle('file:accept', (_e, transferId) => fileTransfer.accept(transferId));
   ipcMain.handle('file:reject', (_e, transferId) => fileTransfer.reject(transferId));
   ipcMain.handle('file:open', (_e, localPath) => shell.openPath(localPath));
+  ipcMain.handle('file:chooseAvatar', async () => {
+    const win = windowManager.getMainWindow();
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      filters: [{ name: 'Imágenes', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const fs = require('fs');
+    const data = fs.readFileSync(result.filePaths[0]);
+    const ext = path.extname(result.filePaths[0]).slice(1).toLowerCase() || 'png';
+    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`;
+    return `data:${mime};base64,${data.toString('base64')}`;
+  });
+
   ipcMain.handle('file:chooseDir', async () => {
     const win = windowManager.getMainWindow();
     const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
@@ -230,11 +244,16 @@ function register() {
 
   ipcMain.handle('settings:get', () => {
     const s = db.getAllSettings();
+    // Default startWithWindows to true on first run (key not yet in DB)
+    if (s.startWithWindows === undefined) {
+      db.setSetting('startWithWindows', true);
+      app.setLoginItemSettings({ openAtLogin: true });
+    }
     return {
       soundEnabled: s.soundEnabled !== false,
       notificationsEnabled: s.notificationsEnabled !== false,
       downloadDir: s.downloadDir || path.join(os.homedir(), 'NeuroChat', 'Archivos'),
-      startWithWindows: s.startWithWindows || false,
+      startWithWindows: s.startWithWindows !== false,
       theme: s.theme || 'auto',
       ...s,
     };
@@ -270,15 +289,18 @@ function register() {
   ipcMain.handle('app:flash', () => {
     const win = windowManager.getMainWindow();
     if (win && !win.isDestroyed() && !win.isFocused()) {
+      // Windows: flash taskbar button until focused
       win.flashFrame(true);
       win.once('focus', () => win.flashFrame(false));
     }
+    // macOS: bounce dock + mark tray as unread
+    tray.notifyUnread(true);
     return { ok: true };
   });
 
   ipcMain.handle('app:setBadge', (_e, count, dataUrl) => {
     try {
-      app.setBadgeCount(count); // macOS / Linux
+      app.setBadgeCount(count); // macOS / Linux dock badge
     } catch {}
     const win = windowManager.getMainWindow();
     if (win && !win.isDestroyed()) {
@@ -293,6 +315,8 @@ function register() {
         } catch {}
       }
     }
+    // Clear tray unread indicator when badge goes to 0
+    if (count === 0) tray.notifyUnread(false);
     return { ok: true };
   });
 

@@ -157,7 +157,11 @@ function showSetup() {
 // ── Own profile render ────────────────────────────────────────────────────────
 function renderOwnProfile() {
   if (!myProfile) return;
-  $('own-name').textContent = myProfile.name;
+  const nameEl = $('own-name');
+  nameEl.textContent = myProfile.name;
+  nameEl.title = 'Clic para editar nombre';
+  nameEl.style.cursor = 'pointer';
+  nameEl.onclick = () => startEditOwnName();
 
   const moodEl = $('own-mood');
   if (moodEl) moodEl.textContent = myProfile.status_message || '';
@@ -169,6 +173,36 @@ function renderOwnProfile() {
   }
 
   renderAvatar($('own-avatar'), myProfile);
+}
+
+function startEditOwnName() {
+  const nameEl = $('own-name');
+  const current = myProfile?.name || '';
+  nameEl.contentEditable = 'true';
+  nameEl.classList.add('editing');
+  nameEl.focus();
+  const range = document.createRange();
+  range.selectNodeContents(nameEl);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+
+  const finish = async () => {
+    nameEl.contentEditable = 'false';
+    nameEl.classList.remove('editing');
+    const newName = nameEl.textContent.trim();
+    if (newName && newName !== current) {
+      myProfile = await nc.saveProfile({ ...myProfile, name: newName });
+      renderOwnProfile();
+    } else {
+      nameEl.textContent = current;
+    }
+  };
+
+  nameEl.onblur = finish;
+  nameEl.onkeydown = e => {
+    if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); }
+    if (e.key === 'Escape') { nameEl.textContent = current; nameEl.blur(); }
+  };
 }
 
 // ── Avatar helper ─────────────────────────────────────────────────────────────
@@ -424,6 +458,29 @@ async function openChat(chat) {
   $('message-input').focus();
 }
 
+// Navigate to a chat — works even when settings view is open
+function navigateToChat(chatId, chatType) {
+  const inSettings = !$('chat-view');
+  if (inSettings) {
+    // Settings is open — find settings onBack and call it with a pending nav
+    const backBtn = document.getElementById('back-btn');
+    if (backBtn) {
+      // Stash pending navigation and trigger back
+      window._pendingNav = { chatId, chatType };
+      backBtn.click();
+      return;
+    }
+  }
+  if (chatType === 'channel') {
+    const ch = cachedChannels.find(c => c.id === chatId);
+    if (ch) openChat({ type: 'channel', id: ch.id, name: ch.name });
+  } else {
+    const user = cachedUsers.find(u => u.uuid === chatId);
+    if (user) openChat({ type: 'dm', id: user.uuid, name: user.name });
+    else openChat({ type: 'dm', id: chatId, name: 'Mensaje directo' });
+  }
+}
+
 async function loadMessages() {
   if (!currentChat) return;
   const opts =
@@ -553,6 +610,11 @@ function makeFileRow(row, msg, isOutgoing) {
       </div>`;
   } else {
     const icon = getFileIcon(mimeType);
+    const downloadBtn = localPath && size <= 30 * 1024 * 1024
+      ? `<button class="file-download-btn" title="Abrir / guardar" data-path="${escHtml(localPath)}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 3v13M5 14l7 7 7-7"/><path d="M3 21h18"/></svg>
+         </button>`
+      : '';
     inner = `
       <div class="file-bubble${localPath ? ' has-file' : ''}" data-transfer="${escHtml(meta.transferId || '')}">
         <div class="file-icon">${icon}</div>
@@ -560,6 +622,7 @@ function makeFileRow(row, msg, isOutgoing) {
           <span class="file-name">${escHtml(name)}</span>
           <span class="file-size">${formatSize(size)}</span>
         </div>
+        ${downloadBtn}
       </div>`;
     if (!localPath) {
       inner += `
@@ -584,8 +647,15 @@ function makeFileRow(row, msg, isOutgoing) {
   if (localPath && isImage) {
     row.querySelector('img')?.addEventListener('click', () => nc.openFile(localPath));
   } else if (localPath) {
-    row.querySelector('.file-bubble')?.addEventListener('click', () => nc.openFile(localPath));
+    row.querySelector('.file-bubble')?.addEventListener('click', e => {
+      if (e.target.closest('.file-download-btn')) return;
+      nc.openFile(localPath);
+    });
   }
+  row.querySelector('.file-download-btn')?.addEventListener('click', e => {
+    e.stopPropagation();
+    nc.openFile(e.currentTarget.dataset.path);
+  });
   return row;
 }
 
@@ -632,25 +702,36 @@ function showContextMenu(e, msg, isOutgoing) {
   const menu = document.createElement('div');
   menu.className = 'context-menu';
 
+  const CTX_ICONS = {
+    reply:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>`,
+    forward: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>`,
+    react:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><circle cx="9" cy="9" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="1.2" fill="currentColor" stroke="none"/></svg>`,
+    copy:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+    edit:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>`,
+    delete:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>`,
+    pin:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>`,
+  };
+
   const items = [
-    { label: '↩️ Responder', action: () => setReply(msg) },
-    { label: '😀 Reaccionar', action: () => showReactionPicker(e, msg) },
-    { label: '📋 Copiar', action: () => navigator.clipboard.writeText(msg.content || '') },
+    { icon: 'reply',   label: 'Responder',  action: () => setReply(msg) },
+    { icon: 'forward', label: 'Reenviar',   action: () => showForwardModal(msg) },
+    { icon: 'react',   label: 'Reaccionar', action: () => showReactionPicker(e, msg) },
+    { icon: 'copy',    label: 'Copiar',     action: () => navigator.clipboard.writeText(msg.content || '') },
   ];
 
   if (isOutgoing && !msg.deleted) {
-    items.push({ label: '✏️ Editar', action: () => startEdit(msg) });
-    items.push({ label: '🗑️ Eliminar', action: () => deleteMessage(msg), danger: true });
+    items.push({ icon: 'edit',   label: 'Editar',   action: () => startEdit(msg) });
+    items.push({ icon: 'delete', label: 'Eliminar', action: () => deleteMessage(msg), danger: true });
   }
 
   if (currentChat?.type === 'channel') {
-    items.push({ label: '📌 Anclar', action: () => pinMessage(msg) });
+    items.push({ icon: 'pin', label: 'Anclar', action: () => pinMessage(msg) });
   }
 
   items.forEach(item => {
     const el = document.createElement('div');
     el.className = `context-item${item.danger ? ' danger' : ''}`;
-    el.textContent = item.label;
+    el.innerHTML = `${CTX_ICONS[item.icon] || ''}<span>${item.label}</span>`;
     el.onclick = () => {
       removeContextMenu();
       item.action();
@@ -675,6 +756,60 @@ function removeContextMenu() {
   }
 }
 
+// ── Forward message ───────────────────────────────────────────────────────────
+function showForwardModal(msg) {
+  const overlay = $('modal-overlay');
+  const box = $('modal-box');
+  const preview = (msg.content || '').slice(0, 80);
+
+  const channelOpts = cachedChannels.map(ch =>
+    `<option value="channel:${ch.id}"># ${escHtml(ch.name)}</option>`
+  ).join('');
+  const dmOpts = cachedUsers.filter(u => u.is_online).map(u =>
+    `<option value="dm:${u.uuid}">${escHtml(u.name)}</option>`
+  ).join('');
+
+  box.innerHTML = `
+    <h2>Reenviar mensaje</h2>
+    <p style="font-size:13px;color:var(--nc-text-2);margin:0 0 14px;padding:10px 12px;background:var(--nc-input-bg);border-radius:var(--nc-radius);border-left:3px solid var(--nc-primary)">${escHtml(preview)}${msg.content?.length > 80 ? '…' : ''}</p>
+    <div class="form-group">
+      <label>Enviar a</label>
+      <select class="form-input" id="forward-dest" style="cursor:pointer">
+        ${channelOpts ? `<optgroup label="Canales">${channelOpts}</optgroup>` : ''}
+        ${dmOpts ? `<optgroup label="Usuarios conectados">${dmOpts}</optgroup>` : ''}
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-ghost" id="forward-cancel" style="flex:1">Cancelar</button>
+      <button class="btn btn-primary" id="forward-send" style="flex:1">Reenviar</button>
+    </div>`;
+
+  overlay.classList.remove('hidden');
+
+  $('forward-cancel').onclick = () => overlay.classList.add('hidden');
+  $('forward-send').onclick = async () => {
+    const val = $('forward-dest').value;
+    if (!val) return;
+    const [type, id] = val.split(':');
+    const fwdMsg = {
+      content: msg.content || '',
+      type: 'text',
+      channelId: type === 'channel' ? id : null,
+      toUuid: type === 'dm' ? id : null,
+      replyTo: null,
+    };
+    await nc.sendMessage(fwdMsg);
+    overlay.classList.add('hidden');
+    if (currentChat && (
+      (type === 'channel' && currentChat.id === id) ||
+      (type === 'dm' && currentChat.id === id)
+    )) {
+      await loadMessages();
+    }
+    showToast('Mensaje reenviado');
+  };
+}
+
 function showChannelMenu(e, ch) {
   removeContextMenu();
 
@@ -683,18 +818,18 @@ function showChannelMenu(e, ch) {
 
   const items = [
     {
-      label: '💬 Abrir canal',
+      label: 'Abrir canal',
       action: () => openChat({ type: 'channel', id: ch.id, name: ch.name }),
     },
     {
-      label: 'ℹ️ Info del canal',
+      label: 'Info del canal',
       action: () => showChannelInfoModal(ch.id),
     },
   ];
 
   if (!ch.is_default) {
     items.push({
-      label: '🗑️ Eliminar canal',
+      label: 'Eliminar canal',
       danger: true,
       action: async () => {
         await nc.deleteChannel(ch.id);
@@ -736,11 +871,11 @@ function showDMMenu(e, user) {
   const isHidden = hiddenDMs.includes(user.uuid);
   const items = [
     {
-      label: '💬 Abrir conversación',
+      label: 'Abrir conversación',
       action: () => openChat({ type: 'dm', id: user.uuid, name: user.name }),
     },
     {
-      label: isHidden ? '👁️ Mostrar conversación' : '🙈 Ocultar conversación',
+      label: isHidden ? 'Mostrar conversación' : 'Ocultar conversación',
       action: async () => {
         if (isHidden) {
           await nc.unhideDM(user.uuid);
@@ -756,7 +891,7 @@ function showDMMenu(e, user) {
       },
     },
     {
-      label: '🗑️ Eliminar conversación',
+      label: 'Eliminar conversación',
       danger: true,
       action: async () => {
         if (!confirm(`¿Eliminar toda la conversación con ${user.name}? Esta acción no se puede deshacer.`)) return;
@@ -1251,13 +1386,7 @@ function subscribeIPCEvents() {
   });
 
   nc.on('notification:navigate', ({ chatId, chatType }) => {
-    if (chatType === 'channel') {
-      const ch = cachedChannels.find(c => c.id === chatId);
-      if (ch) openChat({ type: 'channel', id: ch.id, name: ch.name });
-    } else {
-      const user = cachedUsers.find(u => u.uuid === chatId);
-      if (user) openChat({ type: 'dm', id: user.uuid, name: user.name });
-    }
+    navigateToChat(chatId, chatType);
   });
 
   nc.on('message:edited', async () => {
@@ -1379,6 +1508,57 @@ function updateTransferProgress(data) {
   if (data.done) prog.style.opacity = '0.5';
 }
 
+// ── Chat view restore (after settings) ────────────────────────────────────────
+function restoreChatView(view) {
+  view.innerHTML = `
+    <div id="empty-state" class="empty-state">
+      <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" class="empty-logo">
+        <rect width="80" height="80" rx="20" fill="#4A9E8F"/>
+        <path d="M22 28C22 25.8 23.8 24 26 24H54C56.2 24 58 25.8 58 28V46C58 48.2 56.2 50 54 50H44L36 58V50H26C23.8 50 22 48.2 22 46V28Z" fill="white"/>
+        <circle cx="32" cy="37" r="3" fill="#4A9E8F"/>
+        <circle cx="40" cy="37" r="3" fill="#4A9E8F"/>
+        <circle cx="48" cy="37" r="3" fill="#4A9E8F"/>
+      </svg>
+      <h2>NeuroChat</h2>
+      <p>Selecciona un canal o usuario para comenzar</p>
+      <p class="tagline">by Neurofic</p>
+    </div>
+    <div id="chat-view" class="chat-view hidden"></div>`;
+  editingId = null;
+  replyingTo = null;
+}
+
+// Re-bind inline event assignments that reference DOM elements by id
+// (these are lost when settings replaces the main-content HTML)
+function bindChatEvents() {
+  const cancelReply = $('cancel-reply-btn');
+  if (cancelReply) cancelReply.onclick = () => {
+    replyingTo = null;
+    $('reply-preview').classList.add('hidden');
+  };
+
+  const cancelEdit = $('cancel-edit-btn');
+  if (cancelEdit) cancelEdit.onclick = () => {
+    editingId = null;
+    $('edit-preview').classList.add('hidden');
+    $('message-input').textContent = '';
+  };
+
+  const emojiBtn = $('emoji-btn');
+  if (emojiBtn) emojiBtn.onclick = e => {
+    e.stopPropagation();
+    const picker = $('emoji-picker');
+    if (picker.classList.contains('hidden')) {
+      buildEmojiPicker(picker);
+      picker.classList.remove('hidden');
+    } else {
+      picker.classList.add('hidden');
+    }
+  };
+
+  bindEvents();
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 function openSettings() {
   const view = $('main-content');
@@ -1387,23 +1567,18 @@ function openSettings() {
     .then(m =>
       m.render($('settings-container'), myProfile, {
         onBack: async () => {
-          view.innerHTML = `
-        <div id="empty-state" class="empty-state">
-          <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" class="empty-logo">
-            <rect width="80" height="80" rx="20" fill="#4A9E8F"/>
-            <path d="M22 28C22 25.8 23.8 24 26 24H54C56.2 24 58 25.8 58 28V46C58 48.2 56.2 50 54 50H44L36 58V50H26C23.8 50 22 48.2 22 46V28Z" fill="white"/>
-            <circle cx="32" cy="37" r="3" fill="#4A9E8F"/>
-            <circle cx="40" cy="37" r="3" fill="#4A9E8F"/>
-            <circle cx="48" cy="37" r="3" fill="#4A9E8F"/>
-          </svg>
-          <h2>NeuroChat</h2>
-          <p>Selecciona un canal o usuario para comenzar</p>
-          <p class="tagline">by Neurofic</p>
-        </div>
-        <div id="chat-view" class="chat-view hidden"></div>`;
+          restoreChatView(view);
           myProfile = await nc.getProfile();
           renderOwnProfile();
           await loadSidebar();
+          bindChatEvents();
+          const pending = window._pendingNav;
+          if (pending) {
+            window._pendingNav = null;
+            navigateToChat(pending.chatId, pending.chatType);
+          } else if (currentChat) {
+            openChat(currentChat);
+          }
         },
         onProfileSaved: p => {
           myProfile = p;
@@ -1475,27 +1650,42 @@ async function runSearch(query) {
     return;
   }
   const results = await nc.search(query, {});
-  // Show results in sidebar as temp list
-  const list = $('channel-list');
-  list.innerHTML = `<li style="padding:6px 10px;font-size:11px;color:var(--nc-text-2);font-weight:600">RESULTADOS</li>`;
+
+  // Replace channel list with search results header
+  const chList = $('channel-list');
+  const dmList = $('dm-list');
+
+  chList.innerHTML = `<li style="padding:6px 10px;font-size:11px;color:var(--nc-text-2);font-weight:600;letter-spacing:.05em">RESULTADOS (${results.length})</li>`;
+  dmList.innerHTML = '';
+
   if (!results.length) {
-    list.innerHTML += `<li style="padding:6px 10px;font-size:13px;color:var(--nc-text-2)">Sin resultados</li>`;
+    chList.innerHTML += `<li style="padding:10px;font-size:13px;color:var(--nc-text-2)">Sin resultados para "${escHtml(query)}"</li>`;
     return;
   }
+
   results.forEach(msg => {
     const li = document.createElement('li');
-    li.className = 'nav-item';
-    li.innerHTML = `<span class="nav-label" style="font-size:12px;flex-direction:column;align-items:flex-start;gap:1px">
-      <span style="font-weight:500">${escHtml(msg.content?.slice(0, 60) || '')}</span>
-      <span style="color:var(--nc-text-2);font-size:11px">${formatTime(msg.timestamp)}</span>
-    </span>`;
+    li.className = 'nav-item search-result';
+    const contextName = msg.channel_id
+      ? `# ${escHtml(cachedChannels.find(c => c.id === msg.channel_id)?.name || 'canal')}`
+      : escHtml(cachedUsers.find(u => u.uuid === msg.from_uuid)?.name || 'DM');
+    li.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">
+        <span style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml((msg.content || '').slice(0, 55))}${(msg.content?.length || 0) > 55 ? '…' : ''}</span>
+        <span style="font-size:11px;color:var(--nc-text-2)">${contextName} · ${formatTime(msg.timestamp)}</span>
+      </div>`;
     li.onclick = async () => {
       $('search-input').value = '';
       await loadSidebar();
-      if (msg.channel_id) openChat({ type: 'channel', id: msg.channel_id, name: '…' });
-      else if (msg.private_chat_uuid) openChat({ type: 'dm', id: msg.from_uuid, name: '…' });
+      if (msg.channel_id) {
+        const ch = cachedChannels.find(c => c.id === msg.channel_id);
+        if (ch) openChat({ type: 'channel', id: ch.id, name: ch.name });
+      } else if (msg.from_uuid) {
+        const user = cachedUsers.find(u => u.uuid === msg.from_uuid);
+        if (user) openChat({ type: 'dm', id: user.uuid, name: user.name });
+      }
     };
-    list.appendChild(li);
+    chList.appendChild(li);
   });
 }
 

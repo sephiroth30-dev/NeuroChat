@@ -68,10 +68,9 @@ app.whenReady().then(async () => {
   // nativeTheme.themeSource was set above — Chromium's prefers-color-scheme updates
   // automatically, so CSS @media handles all theme switching without extra IPC events.
 
+  // macOS dock click — always bring window to front, even if hidden
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      windowManager.createMainWindow();
-    }
+    windowManager.showMainWindow();
   });
 });
 
