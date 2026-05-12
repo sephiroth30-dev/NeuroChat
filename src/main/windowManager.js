@@ -34,18 +34,17 @@ function createMainWindow() {
     mainWindow.show();
   });
 
-  // X button → hide to tray instead of closing
-  mainWindow.on('close', e => {
-    if (!isQuitting) {
+  // X button → quit the app (sets isQuitting so before-quit can clean up)
+  mainWindow.on('close', () => {
+    isQuitting = true;
+  });
+
+  // Minimize button → hide to tray (keeps taskbar clean on Windows)
+  mainWindow.on('minimize', e => {
+    if (process.platform !== 'darwin') {
       e.preventDefault();
       mainWindow.hide();
     }
-  });
-
-  // Minimize button → also hide to tray (keeps taskbar clean)
-  mainWindow.on('minimize', e => {
-    e.preventDefault();
-    mainWindow.hide();
   });
 
   mainWindow.on('closed', () => {

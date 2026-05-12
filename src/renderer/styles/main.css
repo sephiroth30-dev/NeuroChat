@@ -131,6 +131,20 @@ img {
   overflow: hidden;
 }
 
+/* Settings overlay — sits on top of main-content without destroying chat DOM */
+.settings-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 240px; /* sidebar width */
+  background: var(--nc-bg);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* ─── Utility ───────────────────────────────────────────────────────────── */
 .hidden {
   display: none !important;

@@ -413,6 +413,14 @@ function createBadgeDataUrl(count) {
 
 // ── Open chat ─────────────────────────────────────────────────────────────────
 async function openChat(chat) {
+  // If settings panel is visible, close it first and re-navigate after
+  if (isSettingsOpen()) {
+    window._pendingChatNav = chat;
+    const backBtn = document.getElementById('back-btn');
+    if (backBtn) backBtn.click();
+    return;
+  }
+
   currentChat = chat;
 
   // Clear unread count for this chat
@@ -458,26 +466,14 @@ async function openChat(chat) {
   $('message-input').focus();
 }
 
-// Navigate to a chat — works even when settings view is open
+// Navigate to a chat by id/type (used by notification click)
 function navigateToChat(chatId, chatType) {
-  const inSettings = !$('chat-view');
-  if (inSettings) {
-    // Settings is open — find settings onBack and call it with a pending nav
-    const backBtn = document.getElementById('back-btn');
-    if (backBtn) {
-      // Stash pending navigation and trigger back
-      window._pendingNav = { chatId, chatType };
-      backBtn.click();
-      return;
-    }
-  }
   if (chatType === 'channel') {
     const ch = cachedChannels.find(c => c.id === chatId);
     if (ch) openChat({ type: 'channel', id: ch.id, name: ch.name });
   } else {
     const user = cachedUsers.find(u => u.uuid === chatId);
-    if (user) openChat({ type: 'dm', id: user.uuid, name: user.name });
-    else openChat({ type: 'dm', id: chatId, name: 'Mensaje directo' });
+    openChat({ type: 'dm', id: chatId, name: user?.name || 'Mensaje directo' });
   }
 }
 
@@ -1508,74 +1504,31 @@ function updateTransferProgress(data) {
   if (data.done) prog.style.opacity = '0.5';
 }
 
-// ── Chat view restore (after settings) ────────────────────────────────────────
-function restoreChatView(view) {
-  view.innerHTML = `
-    <div id="empty-state" class="empty-state">
-      <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" class="empty-logo">
-        <rect width="80" height="80" rx="20" fill="#4A9E8F"/>
-        <path d="M22 28C22 25.8 23.8 24 26 24H54C56.2 24 58 25.8 58 28V46C58 48.2 56.2 50 54 50H44L36 58V50H26C23.8 50 22 48.2 22 46V28Z" fill="white"/>
-        <circle cx="32" cy="37" r="3" fill="#4A9E8F"/>
-        <circle cx="40" cy="37" r="3" fill="#4A9E8F"/>
-        <circle cx="48" cy="37" r="3" fill="#4A9E8F"/>
-      </svg>
-      <h2>NeuroChat</h2>
-      <p>Selecciona un canal o usuario para comenzar</p>
-      <p class="tagline">by Neurofic</p>
-    </div>
-    <div id="chat-view" class="chat-view hidden"></div>`;
-  editingId = null;
-  replyingTo = null;
-}
-
-// Re-bind inline event assignments that reference DOM elements by id
-// (these are lost when settings replaces the main-content HTML)
-function bindChatEvents() {
-  const cancelReply = $('cancel-reply-btn');
-  if (cancelReply) cancelReply.onclick = () => {
-    replyingTo = null;
-    $('reply-preview').classList.add('hidden');
-  };
-
-  const cancelEdit = $('cancel-edit-btn');
-  if (cancelEdit) cancelEdit.onclick = () => {
-    editingId = null;
-    $('edit-preview').classList.add('hidden');
-    $('message-input').textContent = '';
-  };
-
-  const emojiBtn = $('emoji-btn');
-  if (emojiBtn) emojiBtn.onclick = e => {
-    e.stopPropagation();
-    const picker = $('emoji-picker');
-    if (picker.classList.contains('hidden')) {
-      buildEmojiPicker(picker);
-      picker.classList.remove('hidden');
-    } else {
-      picker.classList.add('hidden');
-    }
-  };
-
-  bindEvents();
-}
-
 // ── Settings ──────────────────────────────────────────────────────────────────
+function isSettingsOpen() {
+  return !$('settings-panel')?.classList.contains('hidden');
+}
+
 function openSettings() {
-  const view = $('main-content');
-  view.innerHTML = `<div id="settings-container" style="height:100%;display:flex;flex-direction:column;overflow:hidden"></div>`;
+  const panel = $('settings-panel');
+  const container = $('settings-container');
+  container.innerHTML = '';
+  panel.classList.remove('hidden');
+
   import('./views/settings.js')
     .then(m =>
-      m.render($('settings-container'), myProfile, {
+      m.render(container, myProfile, {
         onBack: async () => {
-          restoreChatView(view);
+          panel.classList.add('hidden');
+          container.innerHTML = '';
           myProfile = await nc.getProfile();
           renderOwnProfile();
           await loadSidebar();
-          bindChatEvents();
-          const pending = window._pendingNav;
+          // If a chat was clicked while settings was open, navigate to it now
+          const pending = window._pendingChatNav;
           if (pending) {
-            window._pendingNav = null;
-            navigateToChat(pending.chatId, pending.chatType);
+            window._pendingChatNav = null;
+            openChat(pending);
           } else if (currentChat) {
             openChat(currentChat);
           }
@@ -1586,14 +1539,9 @@ function openSettings() {
         },
       })
     )
-    .catch(() => {
-      // Settings view not yet implemented — show placeholder
-      view.innerHTML = `
-      <div style="padding:32px;color:var(--nc-text-2)">
-        <h2>Ajustes</h2>
-        <p style="margin-top:8px">Disponible en Fase 9</p>
-        <button class="btn btn-ghost" style="margin-top:16px" onclick="location.reload()">← Volver</button>
-      </div>`;
+    .catch(err => {
+      console.error('[Settings]', err);
+      panel.classList.add('hidden');
     });
 }
 

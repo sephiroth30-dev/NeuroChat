@@ -5,9 +5,9 @@ const os = require('os');
 const { app, BrowserWindow } = require('electron');
 
 const UDP_PORT = 45678;
-const BROADCAST_INTERVAL = 10_000; // 10 s
-const USER_TIMEOUT = 35_000; // 35 s sin señal → offline
-const TIMEOUT_CHECK = 10_000; // revisar cada 10 s
+const BROADCAST_INTERVAL = 5_000; // 5 s
+const USER_TIMEOUT = 18_000; // 18 s sin señal → offline
+const TIMEOUT_CHECK = 5_000; // revisar cada 5 s
 
 let socket = null;
 let broadcastInterval = null;

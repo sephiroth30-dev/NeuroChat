@@ -79,11 +79,8 @@ app.on('second-instance', () => {
 });
 
 app.on('window-all-closed', () => {
-  // On macOS, keep app running; on Windows, quit only when tray says so
-  // The tray module controls real quit via app.quit()
-  if (process.platform !== 'darwin') {
-    // Don't quit — window hides to tray (handled in windowManager)
-  }
+  // Now that X = quit, let the app close on all platforms
+  app.quit();
 });
 
 app.on('before-quit', () => {

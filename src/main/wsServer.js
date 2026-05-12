@@ -155,10 +155,10 @@ function maybeNotify(record, sender) {
     body,
     onClick: () => {
       wins.forEach(w => {
-        w.show();
-        w.focus();
+        if (!w.isDestroyed()) { w.show(); w.focus(); }
       });
-      notifyRenderer('notification:navigate', { chatId, chatType });
+      // Small delay so the window is painted before the renderer receives the event
+      setTimeout(() => notifyRenderer('notification:navigate', { chatId, chatType }), 250);
     },
   });
 }
