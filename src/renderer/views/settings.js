@@ -232,6 +232,16 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
               </div>
               <code class="netinfo-ports">UDP 45678 · TCP 45679/80</code>
             </div>
+            <div class="settings-row" style="align-items:flex-start">
+              <div class="settings-row-label">
+                <span>Subredes adicionales</span>
+                <small>IPs o rangos CIDR para descubrir equipos en otras VLANs</small>
+              </div>
+              <textarea class="form-input" id="s-discovery-targets" rows="3" placeholder="172.16.30.0/24&#10;192.168.1.0/24" style="max-width:260px;resize:vertical">${esc(settings.discoveryTargets || '')}</textarea>
+            </div>
+            <div class="settings-row" style="justify-content:flex-end">
+              <button class="btn btn-ghost" id="save-network-btn">Guardar red</button>
+            </div>
             <div class="settings-row">
               <div class="settings-row-label">
                 <span>Diagnóstico de red</span>
@@ -411,6 +421,12 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
 
   // Startup with Windows
   container.querySelector('#s-startup').onchange = e => nc.setStartupWithWindows(e.target.checked);
+
+  // Network discovery
+  container.querySelector('#save-network-btn').onclick = async () => {
+    const discoveryTargets = container.querySelector('#s-discovery-targets').value.trim();
+    await nc.saveSettings({ discoveryTargets });
+  };
 
   // Diagnostics
   container.querySelector('#diag-btn').onclick = async () => {

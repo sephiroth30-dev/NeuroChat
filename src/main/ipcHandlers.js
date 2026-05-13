@@ -318,6 +318,7 @@ function register() {
       downloadDir: s.downloadDir || path.join(os.homedir(), 'NeuroChat', 'Archivos'),
       startWithWindows: s.startWithWindows !== false,
       theme: s.theme || 'auto',
+      discoveryTargets: s.discoveryTargets || '',
       ...s,
     };
   });
@@ -327,6 +328,9 @@ function register() {
       db.setSetting(k, v);
       if (k === 'theme') {
         nativeTheme.themeSource = v === 'dark' ? 'dark' : v === 'light' ? 'light' : 'system';
+      }
+      if (k === 'discoveryTargets') {
+        discovery.updateAnnounce(db.getProfile() || {});
       }
     }
     return { ok: true };
@@ -507,6 +511,7 @@ function register() {
     return {
       ips: discovery.getLocalIPs(),
       ports: { udp: 45678, ws: 45679, file: 45680 },
+      discoveryTargets: db.getAllSettings().discoveryTargets || '',
     };
   });
 }

@@ -8,6 +8,7 @@ const UDP_PORT = 45678;
 const BROADCAST_INTERVAL = 5_000; // 5 s
 const USER_TIMEOUT = 18_000; // 18 s sin señal → offline
 const TIMEOUT_CHECK = 5_000; // revisar cada 5 s
+const MAX_TARGET_HOSTS = 1024;
 
 let socket = null;
 let broadcastInterval = null;
@@ -39,6 +40,61 @@ function calcBroadcast(ip, netmask) {
 
 function getLocalIPs() {
   return getNetworkInterfaces().map(i => i.ip);
+}
+
+function isValidIPv4(ip) {
+  const parts = String(ip || '').trim().split('.');
+  return parts.length === 4 && parts.every(part => {
+    if (!/^\d{1,3}$/.test(part)) return false;
+    const n = Number(part);
+    return n >= 0 && n <= 255;
+  });
+}
+
+function ipToInt(ip) {
+  return ip.split('.').reduce((acc, part) => ((acc << 8) + Number(part)) >>> 0, 0);
+}
+
+function intToIp(n) {
+  return [24, 16, 8, 0].map(shift => (n >>> shift) & 0xff).join('.');
+}
+
+function expandCidr(cidr) {
+  const [base, prefixRaw] = String(cidr).split('/');
+  const prefix = Number(prefixRaw);
+  if (!isValidIPv4(base) || !Number.isInteger(prefix) || prefix < 24 || prefix > 32) return [];
+
+  const count = 2 ** (32 - prefix);
+  if (count > MAX_TARGET_HOSTS) return [];
+
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  const network = ipToInt(base) & mask;
+  const first = prefix === 32 ? network : network + 1;
+  const last = prefix >= 31 ? network + count - 1 : network + count - 2;
+  const ips = [];
+  for (let n = first; n <= last; n++) ips.push(intToIp(n >>> 0));
+  return ips;
+}
+
+function getExtraDiscoveryTargets() {
+  const settings = db?.getAllSettings ? db.getAllSettings() : {};
+  const raw = settings.discoveryTargets || '';
+  const tokens = Array.isArray(raw)
+    ? raw
+    : String(raw).split(/[\s,;]+/).filter(Boolean);
+
+  const localIps = new Set(getLocalIPs());
+  const targets = new Set();
+
+  tokens.forEach(token => {
+    const trimmed = String(token).trim();
+    const expanded = trimmed.includes('/') ? expandCidr(trimmed) : [trimmed];
+    expanded.forEach(ip => {
+      if (isValidIPv4(ip) && !localIps.has(ip)) targets.add(ip);
+    });
+  });
+
+  return Array.from(targets);
 }
 
 // ── Broadcast ─────────────────────────────────────────────────────────────────
@@ -74,6 +130,12 @@ function broadcast() {
   for (const { broadcast: bcast } of getNetworkInterfaces()) {
     socket.send(payload, 0, payload.length, UDP_PORT, bcast, err => {
       if (err) console.warn(`[Discovery] broadcast → ${bcast}: ${err.message}`);
+    });
+  }
+
+  for (const target of getExtraDiscoveryTargets()) {
+    socket.send(payload, 0, payload.length, UDP_PORT, target, err => {
+      if (err) console.warn(`[Discovery] target → ${target}: ${err.message}`);
     });
   }
 }

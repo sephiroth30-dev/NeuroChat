@@ -10,7 +10,7 @@ const BASE_PROFILE = {
 
 let mockSocketSend;
 
-function loadDiscovery(profile) {
+function loadDiscovery(profile, { settings = {} } = {}) {
   jest.resetModules();
 
   mockSocketSend = jest.fn((_buf, _o, _l, _p, _a, cb) => cb && cb());
@@ -35,6 +35,7 @@ function loadDiscovery(profile) {
   jest.doMock('../../src/main/database', () => ({
     getProfile: () => profile,
     getAllUsers: () => [],
+    getAllSettings: () => settings,
   }));
   jest.doMock('../../src/main/store', () => ({
     getOnlineUsers: () => [],
@@ -100,5 +101,30 @@ describe('broadcast', () => {
     expect(mockSocketSend).toHaveBeenCalled();
     const payload = JSON.parse(mockSocketSend.mock.calls[0][0].toString());
     expect(payload.status).toBe('dnd');
+  });
+
+  test('also sends unicast announcements to configured VLAN targets', () => {
+    loadDiscovery(
+      { ...BASE_PROFILE, status: 'available' },
+      { settings: { discoveryTargets: '172.16.30.10 172.16.30.11' } }
+    );
+    const destinations = mockSocketSend.mock.calls.map(call => call[4]);
+    expect(destinations).toEqual(expect.arrayContaining([
+      '192.168.1.255',
+      '172.16.30.10',
+      '172.16.30.11',
+    ]));
+  });
+
+  test('expands /24 CIDR targets for routed VLAN discovery', () => {
+    loadDiscovery(
+      { ...BASE_PROFILE, status: 'available' },
+      { settings: { discoveryTargets: '172.16.30.0/24' } }
+    );
+    const destinations = mockSocketSend.mock.calls.map(call => call[4]);
+    expect(destinations).toContain('172.16.30.1');
+    expect(destinations).toContain('172.16.30.254');
+    expect(destinations).not.toContain('172.16.30.0');
+    expect(destinations).not.toContain('172.16.30.255');
   });
 });
