@@ -38,6 +38,7 @@ app.whenReady().then(async () => {
   // Initialize auto-updater (check on startup after 5s)
   updater.init();
   setTimeout(() => updater.checkForUpdates(), 5000);
+  updater.startPeriodicChecks();
 
   // Create main window
   const win = windowManager.createMainWindow();

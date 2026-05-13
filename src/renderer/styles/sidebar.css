@@ -331,10 +331,24 @@
 
 /* Offline users — dimmed */
 .dm-offline {
-  opacity: 0.55;
+  opacity: 1;
+  color: color-mix(in srgb, var(--nc-text-2) 72%, white);
 }
 .dm-offline .nav-label {
-  color: var(--nc-text-2);
+  color: color-mix(in srgb, var(--nc-text-2) 68%, white);
+  font-weight: 500;
+}
+.dm-offline .dm-status-msg {
+  color: color-mix(in srgb, var(--nc-text-2) 58%, white);
+  opacity: 1;
+}
+.dm-offline .avatar.small {
+  opacity: 0.42;
+  filter: grayscale(1) saturate(0.35);
+}
+.dm-offline .avatar-status.offline {
+  background: #c7d0d8;
+  border-color: var(--nc-sidebar);
 }
 
 /* Divider between online/offline sections */

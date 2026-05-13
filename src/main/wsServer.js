@@ -71,6 +71,7 @@ function handleIncoming(msg) {
       type: msg.msgType || 'text',
       reply_to: msg.replyTo || null,
       timestamp: msg.timestamp || Date.now(),
+      received_at: Date.now(),
       edited: 0,
       deleted: 0,
       delivered: 1,
@@ -118,6 +119,24 @@ function handleIncoming(msg) {
     require('./fileTransfer').onOffer(msg);
   } else if (type === 'FILE_REJECT') {
     notifyRenderer('file:rejected', { transferId: msg.transferId });
+  } else if (type === 'CHANNEL_UPSERT') {
+    if (!msg.channel?.id || !msg.channel?.name) return;
+    db.upsertChannel({
+      id: msg.channel.id,
+      name: msg.channel.name,
+      description: msg.channel.description || null,
+      created_by: msg.channel.created_by || msg.fromUuid || null,
+      created_at: msg.channel.created_at || Date.now(),
+      is_default: msg.channel.is_default ? 1 : 0,
+    });
+    if (Array.isArray(msg.memberIds)) {
+      db.replaceChannelMembers(msg.channel.id, msg.memberIds, msg.fromUuid || null);
+    }
+    notifyRenderer('channel:synced', { id: msg.channel.id });
+  } else if (type === 'CHANNEL_DELETE') {
+    if (!msg.channelId) return;
+    db.deleteChannel(msg.channelId);
+    notifyRenderer('channel:synced', { id: msg.channelId, deleted: true });
   }
 }
 
@@ -282,6 +301,33 @@ function broadcastTyping(opts) {
   }
 }
 
+function broadcastChannelUpsert(channel, memberIds = []) {
+  const wsClient = require('./wsClient');
+  const profile = db.getProfile();
+  if (!profile || !channel?.id) return;
+
+  const payload = {
+    type: 'CHANNEL_UPSERT',
+    fromUuid: profile.uuid,
+    channel,
+    memberIds,
+  };
+  store.getOnlineUsers().forEach(u => wsClient.sendTo(u, payload));
+}
+
+function broadcastChannelDelete(channelId) {
+  const wsClient = require('./wsClient');
+  const profile = db.getProfile();
+  if (!profile || !channelId) return;
+
+  const payload = {
+    type: 'CHANNEL_DELETE',
+    fromUuid: profile.uuid,
+    channelId,
+  };
+  store.getOnlineUsers().forEach(u => wsClient.sendTo(u, payload));
+}
+
 module.exports = {
   start,
   stop,
@@ -290,6 +336,8 @@ module.exports = {
   broadcastDelete,
   broadcastReaction,
   broadcastTyping,
+  broadcastChannelUpsert,
+  broadcastChannelDelete,
   clearUnread,
   clearPendingNotifications,
 };

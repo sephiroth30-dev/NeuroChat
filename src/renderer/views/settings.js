@@ -487,6 +487,11 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
       updateInfo.style.color = 'var(--nc-online)';
       checkBtn.classList.add('hidden');
       installBtn.classList.remove('hidden');
+    } else if (state === 'required') {
+      updateInfo.textContent = `v${data.version} lista. Reinicio obligatorio en ~${data.installInMinutes || 10} min`;
+      updateInfo.style.color = 'var(--nc-error, #e74c3c)';
+      checkBtn.classList.add('hidden');
+      installBtn.classList.remove('hidden');
     } else if (state === 'error') {
       updateInfo.textContent = `Error: ${data.message || 'No se pudo verificar'}`;
       updateInfo.style.color = 'var(--nc-error, #e74c3c)';

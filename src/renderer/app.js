@@ -1069,7 +1069,7 @@ async function showChannelInfoModal(channelId) {
   const existing = document.getElementById('channel-info-modal');
   if (existing) existing.remove();
 
-  const { channel, members, nonMembers } = await nc.getChannelInfo(channelId);
+  let { channel, members, nonMembers } = await nc.getChannelInfo(channelId);
   if (!channel) return;
 
   const overlay = document.createElement('div');
@@ -1091,7 +1091,7 @@ async function showChannelInfoModal(channelId) {
           Usuarios en la red
           <span style="font-weight:400;margin-left:6px">${onlineCount} conectado${onlineCount !== 1 ? 's' : ''} · ${members.length} total</span>
         </div>
-        ${members.length === 0 ? `<p style="padding:12px 20px;color:var(--nc-text-2);font-size:13px;">Ningún usuario detectado en la red.</p>` : ''}
+        ${members.length === 0 ? `<p style="padding:12px 20px;color:var(--nc-text-2);font-size:13px;">Sin miembros en este canal.</p>` : ''}
         <ul class="modal-member-list" id="ch-member-list">
           ${members.map(m => `
             <li class="modal-member" data-uuid="${m.uuid}">
@@ -1105,12 +1105,54 @@ async function showChannelInfoModal(channelId) {
                 : m.is_online
                   ? '<span style="font-size:11px;color:var(--nc-online)">Conectado</span>'
                   : '<span style="font-size:11px;color:var(--nc-text-2)">Desconectado</span>'}
+              ${m.uuid !== myUuid && !channel.is_default
+                ? `<button class="icon-btn ch-remove-member" data-uuid="${m.uuid}" title="Quitar del canal">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                  </button>`
+                : ''}
             </li>`).join('')}
         </ul>
+        ${!channel.is_default ? `
+          <div class="modal-section-title">
+            Agregar miembros
+            <span style="font-weight:400;margin-left:6px">${nonMembers.length} disponible${nonMembers.length !== 1 ? 's' : ''}</span>
+          </div>
+          ${nonMembers.length === 0 ? `<p style="padding:12px 20px;color:var(--nc-text-2);font-size:13px;">Todos los usuarios detectados ya pertenecen al canal.</p>` : ''}
+          <ul class="modal-member-list" id="ch-nonmember-list">
+            ${nonMembers.map(m => `
+              <li class="modal-member" data-uuid="${m.uuid}">
+                ${memberAvatar(m)}
+                <div style="flex:1;min-width:0">
+                  <span class="modal-member-name">${escHtml(m.name)}</span>
+                  ${m.status_message ? `<span class="dm-status-msg">${escHtml(m.status_message)}</span>` : ''}
+                </div>
+                <button class="btn btn-ghost ch-add-member" data-uuid="${m.uuid}" style="font-size:11px;padding:4px 9px">Agregar</button>
+              </li>`).join('')}
+          </ul>` : ''}
       </div>`;
 
     document.getElementById('close-ch-info').onclick = () => overlay.remove();
     overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+
+    overlay.querySelectorAll('.ch-add-member').forEach(btn => {
+      btn.onclick = async e => {
+        e.stopPropagation();
+        await nc.addChannelMember(channel.id, btn.dataset.uuid);
+        ({ channel, members, nonMembers } = await nc.getChannelInfo(channel.id));
+        renderModal();
+        await loadSidebar();
+      };
+    });
+
+    overlay.querySelectorAll('.ch-remove-member').forEach(btn => {
+      btn.onclick = async e => {
+        e.stopPropagation();
+        await nc.removeChannelMember(channel.id, btn.dataset.uuid);
+        ({ channel, members, nonMembers } = await nc.getChannelInfo(channel.id));
+        renderModal();
+        await loadSidebar();
+      };
+    });
   }
 
   renderModal();
@@ -1686,8 +1728,22 @@ function subscribeIPCEvents() {
     renderOwnProfile();
   });
 
-  nc.on('channel:synced', async () => {
+  nc.on('channel:synced', async data => {
     await loadSidebar();
+    if (data?.deleted && currentChat?.type === 'channel' && currentChat.id === data.id) {
+      currentChat = null;
+      $('chat-view').classList.add('hidden');
+      $('empty-state').classList.remove('hidden');
+      return;
+    }
+    if (currentChat?.type === 'channel') {
+      const stillVisible = cachedChannels.some(ch => ch.id === currentChat.id);
+      if (!stillVisible) {
+        currentChat = null;
+        $('chat-view').classList.add('hidden');
+        $('empty-state').classList.remove('hidden');
+      }
+    }
   });
 
   nc.on('file:offer', offer => {

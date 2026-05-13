@@ -83,11 +83,14 @@ function register() {
       is_default: 0,
     };
     db.upsertChannel(channel);
+    db.addAllKnownUsersToChannel(channel.id, profile.uuid);
+    wsServer.broadcastChannelUpsert(channel, db.getChannelMemberIds(channel.id));
     return channel;
   });
 
   ipcMain.handle('channels:delete', (_e, id) => {
     db.deleteChannel(id);
+    wsServer.broadcastChannelDelete(id);
     return { ok: true };
   });
 
@@ -448,17 +451,25 @@ function register() {
       return (a.name || '').localeCompare(b.name || '');
     });
 
-    return { channel, members: allUsers, nonMembers: [] };
+    const memberIds = new Set(db.getChannelMemberIds(channelId));
+    const members = channel?.is_default ? allUsers : allUsers.filter(u => memberIds.has(u.uuid));
+    const nonMembers = channel?.is_default ? [] : allUsers.filter(u => !memberIds.has(u.uuid));
+
+    return { channel, members, nonMembers };
   });
 
   ipcMain.handle('channels:addMember', (_e, { channelId, userUuid }) => {
     const profile = db.getProfile();
     db.addChannelMember(channelId, userUuid, profile?.uuid || null);
+    const channel = db.getChannel(channelId);
+    if (channel) wsServer.broadcastChannelUpsert(channel, db.getChannelMemberIds(channelId));
     return { ok: true };
   });
 
   ipcMain.handle('channels:removeMember', (_e, { channelId, userUuid }) => {
     db.removeChannelMember(channelId, userUuid);
+    const channel = db.getChannel(channelId);
+    if (channel) wsServer.broadcastChannelUpsert(channel, db.getChannelMemberIds(channelId));
     return { ok: true };
   });
 

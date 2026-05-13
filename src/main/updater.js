@@ -3,10 +3,13 @@
 const { autoUpdater } = require('electron-updater');
 const { BrowserWindow, shell, app } = require('electron');
 
-autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = false;
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
 
 let _downloadedFilePath = null;
+let _installTimer = null;
+const FORCED_INSTALL_DELAY_MS = 10 * 60 * 1000;
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 function notifyRenderer(event, data) {
   BrowserWindow.getAllWindows().forEach(w => {
@@ -27,15 +30,16 @@ function init() {
 
   autoUpdater.on('update-available', info => {
     notifyRenderer('update:status', {
-      state: 'available',
+      state: 'downloading',
       version: info.version,
       releaseDate: info.releaseDate,
+      percent: 0,
     });
 
     const notifier = require('./notifier');
     notifier.notify({
-      title: '🔔 Nueva versión disponible',
-      body: `NeuroChat v${info.version} está disponible. Haz clic para descargarla.`,
+      title: 'Actualización obligatoria',
+      body: `NeuroChat v${info.version} se está descargando automáticamente.`,
       persistent: true,
       onClick: openSettingsWindow,
     });
@@ -56,15 +60,21 @@ function init() {
 
   autoUpdater.on('update-downloaded', info => {
     _downloadedFilePath = info.downloadedFile || null;
-    notifyRenderer('update:status', { state: 'ready', version: info.version });
+    notifyRenderer('update:status', {
+      state: 'required',
+      version: info.version,
+      installInMinutes: Math.ceil(FORCED_INSTALL_DELAY_MS / 60000),
+    });
 
     const notifier = require('./notifier');
     notifier.notify({
-      title: '✅ Actualización lista para instalar',
-      body: `NeuroChat v${info.version} descargada. Haz clic para instalar y reiniciar.`,
+      title: 'Actualización lista',
+      body: `NeuroChat v${info.version} se instalará automáticamente. Haz clic para reiniciar ahora.`,
       persistent: true,
       onClick: () => installUpdate(),
     });
+
+    scheduleForcedInstall();
   });
 
   autoUpdater.on('error', err => {
@@ -76,15 +86,29 @@ function init() {
 function checkForUpdates() {
   autoUpdater.checkForUpdates().catch(err => {
     console.error('[Updater] checkForUpdates:', err.message);
-    notify('update:status', { state: 'error', message: err.message });
+    notifyRenderer('update:status', { state: 'error', message: err.message });
   });
 }
 
 function downloadUpdate() {
   autoUpdater.downloadUpdate().catch(err => {
     console.error('[Updater] downloadUpdate:', err.message);
-    notify('update:status', { state: 'error', message: err.message });
+    notifyRenderer('update:status', { state: 'error', message: err.message });
   });
+}
+
+function scheduleForcedInstall() {
+  if (_installTimer) clearTimeout(_installTimer);
+  _installTimer = setTimeout(() => {
+    _installTimer = null;
+    installUpdate();
+  }, FORCED_INSTALL_DELAY_MS);
+  _installTimer.unref?.();
+}
+
+function startPeriodicChecks() {
+  const timer = setInterval(() => checkForUpdates(), UPDATE_CHECK_INTERVAL_MS);
+  timer.unref?.();
 }
 
 function installUpdate() {
@@ -128,4 +152,4 @@ function installUpdate() {
   }
 }
 
-module.exports = { init, checkForUpdates, downloadUpdate, installUpdate };
+module.exports = { init, checkForUpdates, downloadUpdate, installUpdate, startPeriodicChecks };

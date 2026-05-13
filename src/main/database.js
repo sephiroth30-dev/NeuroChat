@@ -4,7 +4,7 @@ const path = require('path');
 const { app } = require('electron');
 const Database = require('better-sqlite3');
 
-const _DB_VERSION = 5;
+const _DB_VERSION = 6;
 let db = null;
 
 function getDbPath() {
@@ -63,6 +63,7 @@ function createSchema() {
       type TEXT DEFAULT 'text',
       reply_to TEXT,
       timestamp INTEGER NOT NULL,
+      received_at INTEGER,
       edited INTEGER DEFAULT 0,
       deleted INTEGER DEFAULT 0,
       delivered INTEGER DEFAULT 0,
@@ -171,6 +172,14 @@ function runMigrations() {
     });
     db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(5);
   }
+
+  if (current < 6) {
+    try {
+      db.exec('ALTER TABLE messages ADD COLUMN received_at INTEGER');
+    } catch {}
+    db.exec('UPDATE messages SET received_at = timestamp WHERE received_at IS NULL');
+    db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(6);
+  }
 }
 
 // ── Profile ──────────────────────────────────────────────────────────────────
@@ -247,7 +256,17 @@ function setAllOffline() {
 // ── Channels ──────────────────────────────────────────────────────────────────
 
 function getChannels() {
-  return db.prepare('SELECT * FROM channels ORDER BY is_default DESC, name').all();
+  const profile = getProfile();
+  if (!profile) {
+    return db.prepare('SELECT * FROM channels ORDER BY is_default DESC, name').all();
+  }
+  return db.prepare(`
+    SELECT DISTINCT c.*
+    FROM channels c
+    LEFT JOIN channel_members cm ON cm.channel_id = c.id AND cm.user_uuid = ?
+    WHERE c.is_default = 1 OR cm.user_uuid IS NOT NULL
+    ORDER BY c.is_default DESC, c.name
+  `).all(profile.uuid);
 }
 
 function getChannel(id) {
@@ -266,8 +285,21 @@ function upsertChannel(channel) {
   ).run(channel);
 }
 
+function addAllKnownUsersToChannel(channelId, addedBy) {
+  const now = Date.now();
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO channel_members (channel_id, user_uuid, added_by, added_at) VALUES (?, ?, ?, ?)'
+  );
+  const profile = getProfile();
+  if (profile) insert.run(channelId, profile.uuid, addedBy || profile.uuid, now);
+  db.prepare('SELECT uuid FROM users').all().forEach(u => {
+    insert.run(channelId, u.uuid, addedBy || profile?.uuid || null, now);
+  });
+}
+
 function deleteChannel(id) {
   db.prepare('DELETE FROM channels WHERE id = ? AND is_default = 0').run(id);
+  db.prepare('DELETE FROM channel_members WHERE channel_id = ?').run(id);
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────
@@ -275,8 +307,8 @@ function deleteChannel(id) {
 function getMessages({ channelId, privateChatUuid, limit = 50, before = null }) {
   if (channelId) {
     const q = before
-      ? 'SELECT * FROM messages WHERE channel_id = ? AND timestamp < ? ORDER BY timestamp DESC, rowid DESC LIMIT ?'
-      : 'SELECT * FROM messages WHERE channel_id = ? ORDER BY timestamp DESC, rowid DESC LIMIT ?';
+      ? 'SELECT * FROM messages WHERE channel_id = ? AND received_at < ? ORDER BY received_at DESC, rowid DESC LIMIT ?'
+      : 'SELECT * FROM messages WHERE channel_id = ? ORDER BY received_at DESC, rowid DESC LIMIT ?';
     const rows = before
       ? db.prepare(q).all(channelId, before, limit)
       : db.prepare(q).all(channelId, limit);
@@ -286,8 +318,8 @@ function getMessages({ channelId, privateChatUuid, limit = 50, before = null }) 
     const myUuid = getProfile()?.uuid;
     const normalizedId = [myUuid, privateChatUuid].sort().join(':');
     const q = before
-      ? `SELECT * FROM messages WHERE private_chat_uuid = ? AND timestamp < ? ORDER BY timestamp DESC, rowid DESC LIMIT ?`
-      : `SELECT * FROM messages WHERE private_chat_uuid = ? ORDER BY timestamp DESC, rowid DESC LIMIT ?`;
+      ? `SELECT * FROM messages WHERE private_chat_uuid = ? AND received_at < ? ORDER BY received_at DESC, rowid DESC LIMIT ?`
+      : `SELECT * FROM messages WHERE private_chat_uuid = ? ORDER BY received_at DESC, rowid DESC LIMIT ?`;
     const rows = before
       ? db.prepare(q).all(normalizedId, before, limit)
       : db.prepare(q).all(normalizedId, limit);
@@ -299,12 +331,13 @@ function getMessages({ channelId, privateChatUuid, limit = 50, before = null }) 
 function saveMessage(msg) {
   db.prepare(
     `
-    INSERT INTO messages (id, channel_id, private_chat_uuid, from_uuid, content, type, reply_to, timestamp, edited, deleted, delivered, read_by)
-    VALUES (@id, @channel_id, @private_chat_uuid, @from_uuid, @content, @type, @reply_to, @timestamp, @edited, @deleted, @delivered, @read_by)
+    INSERT INTO messages (id, channel_id, private_chat_uuid, from_uuid, content, type, reply_to, timestamp, received_at, edited, deleted, delivered, read_by)
+    VALUES (@id, @channel_id, @private_chat_uuid, @from_uuid, @content, @type, @reply_to, @timestamp, @received_at, @edited, @deleted, @delivered, @read_by)
     ON CONFLICT(id) DO NOTHING
   `
   ).run({
     ...msg,
+    received_at: msg.received_at || Date.now(),
     read_by: JSON.stringify(msg.read_by || []),
   });
 }
@@ -459,6 +492,12 @@ function getChannelMembers(channelId) {
   `).all(channelId);
 }
 
+function getChannelMemberIds(channelId) {
+  return db.prepare('SELECT user_uuid FROM channel_members WHERE channel_id = ? ORDER BY user_uuid')
+    .all(channelId)
+    .map(row => row.user_uuid);
+}
+
 function addChannelMember(channelId, userUuid, addedBy) {
   db.prepare(
     'INSERT OR IGNORE INTO channel_members (channel_id, user_uuid, added_by, added_at) VALUES (?, ?, ?, ?)'
@@ -467,6 +506,19 @@ function addChannelMember(channelId, userUuid, addedBy) {
 
 function removeChannelMember(channelId, userUuid) {
   db.prepare('DELETE FROM channel_members WHERE channel_id = ? AND user_uuid = ?').run(channelId, userUuid);
+}
+
+function replaceChannelMembers(channelId, memberIds, addedBy = null) {
+  const now = Date.now();
+  const uniqueIds = Array.from(new Set(memberIds || [])).filter(Boolean);
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM channel_members WHERE channel_id = ?').run(channelId);
+    const insert = db.prepare(
+      'INSERT OR IGNORE INTO channel_members (channel_id, user_uuid, added_by, added_at) VALUES (?, ?, ?, ?)'
+    );
+    uniqueIds.forEach(uuid => insert.run(channelId, uuid, addedBy, now));
+  });
+  tx();
 }
 
 function isChannelMember(channelId, userUuid) {
@@ -557,7 +609,10 @@ module.exports = {
   setHiddenDM,
   getLastDMTimestamps,
   getChannelMembers,
+  getChannelMemberIds,
   addChannelMember,
+  addAllKnownUsersToChannel,
   removeChannelMember,
+  replaceChannelMembers,
   isChannelMember,
 };
