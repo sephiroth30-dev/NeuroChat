@@ -16,6 +16,8 @@ let db,
   _notifier,
   windowManager;
 
+const DEFAULT_DISCOVERY_TARGETS = '172.16.30.0/24\n192.168.1.0/24';
+
 function register() {
   db = require('./database');
   store = require('./store');
@@ -318,7 +320,7 @@ function register() {
       downloadDir: s.downloadDir || path.join(os.homedir(), 'NeuroChat', 'Archivos'),
       startWithWindows: s.startWithWindows !== false,
       theme: s.theme || 'auto',
-      discoveryTargets: s.discoveryTargets || '',
+      discoveryTargets: s.discoveryTargets || DEFAULT_DISCOVERY_TARGETS,
       ...s,
     };
   });

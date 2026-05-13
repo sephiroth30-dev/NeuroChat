@@ -9,6 +9,7 @@ const BROADCAST_INTERVAL = 5_000; // 5 s
 const USER_TIMEOUT = 18_000; // 18 s sin señal → offline
 const TIMEOUT_CHECK = 5_000; // revisar cada 5 s
 const MAX_TARGET_HOSTS = 1024;
+const DEFAULT_DISCOVERY_TARGETS = '172.16.30.0/24\n192.168.1.0/24';
 
 let socket = null;
 let broadcastInterval = null;
@@ -78,7 +79,7 @@ function expandCidr(cidr) {
 
 function getExtraDiscoveryTargets() {
   const settings = db?.getAllSettings ? db.getAllSettings() : {};
-  const raw = settings.discoveryTargets || '';
+  const raw = settings.discoveryTargets || DEFAULT_DISCOVERY_TARGETS;
   const tokens = Array.isArray(raw)
     ? raw
     : String(raw).split(/[\s,;]+/).filter(Boolean);
@@ -103,6 +104,7 @@ function buildPayload() {
   if (!myProfile) return null;
   const ifaces = getNetworkInterfaces();
   if (!ifaces.length) return null;
+  const ips = ifaces.map(iface => iface.ip);
 
   return Buffer.from(
     JSON.stringify({
@@ -115,6 +117,7 @@ function buildPayload() {
       statusMessage: myProfile.status_message || '',
       wsPort: 45679,
       ip: ifaces[0].ip,
+      ips,
       version: app.getVersion(),
     })
   );
@@ -171,7 +174,7 @@ function handleMessage(msg, rinfo) {
     color: data.color || '#4A9E8F',
     status: data.status || 'available',
     status_message: data.statusMessage || '',
-    ip: data.ip || rinfo.address,
+    ip: rinfo.address || data.ip,
     wsPort: data.wsPort || 45679,
     is_online: 1,
     last_seen: now,

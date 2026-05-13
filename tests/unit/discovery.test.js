@@ -9,12 +9,13 @@ const BASE_PROFILE = {
 };
 
 let mockSocketSend;
+let mockSocket;
 
 function loadDiscovery(profile, { settings = {} } = {}) {
   jest.resetModules();
 
   mockSocketSend = jest.fn((_buf, _o, _l, _p, _a, cb) => cb && cb());
-  const mockSocket = {
+  mockSocket = {
     bind: jest.fn((_p, cb) => cb && cb()),
     setBroadcast: jest.fn(),
     send: mockSocketSend,
@@ -36,12 +37,17 @@ function loadDiscovery(profile, { settings = {} } = {}) {
     getProfile: () => profile,
     getAllUsers: () => [],
     getAllSettings: () => settings,
+    upsertUser: jest.fn(),
+    setUserOffline: jest.fn(),
   }));
   jest.doMock('../../src/main/store', () => ({
     getOnlineUsers: () => [],
+    setUserOnline: jest.fn(),
+    setUserOffline: jest.fn(),
     setOnlineStatus: jest.fn(),
     markOffline: jest.fn(),
     removeUser: jest.fn(),
+    drainQueue: jest.fn(() => []),
   }));
 
   const disc = require('../../src/main/discovery');
@@ -52,6 +58,35 @@ function loadDiscovery(profile, { settings = {} } = {}) {
 afterEach(() => {
   try { require('../../src/main/discovery').stop(); } catch (_) {}
   jest.resetModules();
+});
+
+describe('incoming announcements', () => {
+  test('stores the real packet source IP so routed VLAN peers can connect back', () => {
+    loadDiscovery(
+      { ...BASE_PROFILE, uuid: 'local-user' },
+      { settings: { discoveryTargets: '' } }
+    );
+    const mockDb = require('../../src/main/database');
+    const mockStore = require('../../src/main/store');
+
+    const onMessage = mockSocket.on.mock.calls.find(call => call[0] === 'message')[1];
+    onMessage(Buffer.from(JSON.stringify({
+      type: 'NEUROCHAT_ANNOUNCE',
+      uuid: 'remote-user',
+      name: 'Equipo cable',
+      ip: '10.0.0.99',
+      wsPort: 45679,
+    })), { address: '192.168.1.42' });
+
+    expect(mockDb.upsertUser).toHaveBeenCalledWith(expect.objectContaining({
+      uuid: 'remote-user',
+      ip: '192.168.1.42',
+    }));
+    expect(mockStore.setUserOnline).toHaveBeenCalledWith(expect.objectContaining({
+      uuid: 'remote-user',
+      ip: '192.168.1.42',
+    }));
+  });
 });
 
 // ── broadcast ─────────────────────────────────────────────────────────────────
@@ -81,6 +116,7 @@ describe('broadcast', () => {
     const payload = JSON.parse(mockSocketSend.mock.calls[0][0].toString());
     expect(payload).toHaveProperty('wsPort');
     expect(payload).toHaveProperty('ip', '192.168.1.10');
+    expect(payload).toHaveProperty('ips', ['192.168.1.10']);
   });
 
   test('payload never exposes invisible status to peers', () => {
@@ -126,5 +162,14 @@ describe('broadcast', () => {
     expect(destinations).toContain('172.16.30.254');
     expect(destinations).not.toContain('172.16.30.0');
     expect(destinations).not.toContain('172.16.30.255');
+  });
+
+  test('uses the default clinic VLAN ranges when no targets are configured', () => {
+    loadDiscovery({ ...BASE_PROFILE, status: 'available' });
+    const destinations = mockSocketSend.mock.calls.map(call => call[4]);
+    expect(destinations).toContain('172.16.30.1');
+    expect(destinations).toContain('172.16.30.254');
+    expect(destinations).toContain('192.168.1.1');
+    expect(destinations).toContain('192.168.1.254');
   });
 });
