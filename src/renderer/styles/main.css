@@ -40,19 +40,19 @@
   --nc-primary: #4a9e8f;
   --nc-primary-lt: #6bbdaf;
   --nc-primary-dk: #2e7a6d;
-  --nc-bubble-out: #dcf0ed;
+  --nc-bubble-out: #d9f5ef;
   --nc-bubble-in: #ffffff;
-  --nc-bg: #f4f6f8;
+  --nc-bg: #efeae2;
   --nc-sidebar: #ffffff;
   --nc-text: #1a2530;
   --nc-text-2: #6b7b8a;
-  --nc-border: #e2e8ee;
+  --nc-border: #ddd8cf;
   --nc-online: #3cb371;
   --nc-away: #f0a500;
   --nc-dnd: #e05a5a;
   --nc-unread: #4a9e8f;
-  --nc-input-bg: #f4f6f8;
-  --nc-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --nc-input-bg: #f7f4ef;
+  --nc-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
   --nc-radius: 10px;
   --nc-radius-sm: 6px;
   --nc-radius-lg: 16px;
@@ -61,19 +61,18 @@
   --nc-transition: 0.15s ease;
 }
 
-/* ─── Dark theme — driven by nativeTheme.themeSource (auto/dark/light) ─── */
-/* Applies when: forced dark OR auto + OS is dark. No JS class toggling needed. */
+/* ─── Dark theme ─────────────────────────────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
   :root {
-    --nc-bubble-out: #2b5278;
-    --nc-bubble-in: #182533;
-    --nc-bg: #0e1621;
-    --nc-sidebar: #17212b;
-    --nc-text: #ffffff;
-    --nc-text-2: #8e9bab;
-    --nc-border: #232e3c;
-    --nc-input-bg: #232e3c;
-    --nc-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --nc-bubble-out: #025144;
+    --nc-bubble-in: #1f2c34;
+    --nc-bg: #0b141a;
+    --nc-sidebar: #111b21;
+    --nc-text: #e9edef;
+    --nc-text-2: #8696a0;
+    --nc-border: #1f2c34;
+    --nc-input-bg: #1f2c34;
+    --nc-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   }
 }
 

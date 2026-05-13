@@ -9,7 +9,7 @@ if (!gotLock) {
 }
 
 // Lazy-loaded modules (initialized after app ready)
-let windowManager, database, discovery, wsServer, fileTransfer, tray, _notifier, ipcHandlers;
+let windowManager, database, discovery, wsServer, fileTransfer, tray, _notifier, ipcHandlers, updater;
 
 app.whenReady().then(async () => {
   console.log(`[NeuroChat] v${app.getVersion()} — iniciando`);
@@ -30,9 +30,14 @@ app.whenReady().then(async () => {
   fileTransfer = require('./fileTransfer');
   discovery = require('./discovery');
   ipcHandlers = require('./ipcHandlers');
+  updater = require('./updater');
 
   // Register all IPC handlers
   ipcHandlers.register();
+
+  // Initialize auto-updater (check on startup after 5s)
+  updater.init();
+  setTimeout(() => updater.checkForUpdates(), 5000);
 
   // Create main window
   const win = windowManager.createMainWindow();
@@ -44,6 +49,9 @@ app.whenReady().then(async () => {
 
   // Init tray icon
   tray.init(win);
+
+  // Clear unread badge when window comes into focus
+  win.on('focus', () => wsServer.clearUnread());
 
   // System idle → auto-away after 15 min
   const IDLE_AWAY_SECONDS = 15 * 60;

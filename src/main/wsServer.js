@@ -44,6 +44,7 @@ function start(port) {
 
 function stop() {
   require('./wsClient').closeAll();
+  clearPendingNotifications();
   if (wss) {
     wss.close(() => {});
     wss = null;
@@ -126,6 +127,10 @@ function notifyRenderer(event, data) {
   });
 }
 
+// Pending notification groups: chatId → { senderName, count, chatType, timer }
+const _pendingNotifs = new Map();
+let _unreadTotal = 0;
+
 function maybeNotify(record, sender) {
   const wins = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed());
   if (wins.some(w => w.isFocused())) return;
@@ -136,31 +141,73 @@ function maybeNotify(record, sender) {
   const profile = db.getProfile();
   if (profile?.status === 'dnd') return;
 
-  let body;
-  if (record.type === 'file') {
-    try {
-      body = `📎 ${JSON.parse(record.content).name}`;
-    } catch {
-      body = '📎 Archivo';
-    }
-  } else {
-    body = String(record.content || '').slice(0, 80);
-  }
-
   const chatId = record.channel_id || record.from_uuid;
   const chatType = record.channel_id ? 'channel' : 'dm';
+  const senderName = sender.name || 'NeuroChat';
+
+  // Accumulate messages per chat, debounce 1.5 s to group bursts
+  const existing = _pendingNotifs.get(chatId);
+  if (existing) {
+    clearTimeout(existing.timer);
+    existing.count += 1;
+    existing.lastBody = buildBody(record);
+  } else {
+    _pendingNotifs.set(chatId, { senderName, count: 1, chatType, lastBody: buildBody(record) });
+  }
+  _unreadTotal += 1;
+
+  const entry = _pendingNotifs.get(chatId);
+  entry.timer = setTimeout(() => {
+    _pendingNotifs.delete(chatId);
+    fireNotification({ chatId, chatType, senderName: entry.senderName, count: entry.count, lastBody: entry.lastBody });
+    updateTrayBadge();
+  }, 1500);
+  entry.timer.unref?.();
+
+  updateTrayBadge();
+}
+
+function buildBody(record) {
+  if (record.type === 'file') {
+    try { return `📎 ${JSON.parse(record.content).name}`; } catch { return '📎 Archivo'; }
+  }
+  return String(record.content || '').slice(0, 80);
+}
+
+function fireNotification({ chatId, chatType, senderName, count, lastBody }) {
+  const wins = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed());
+  const title = count === 1 ? senderName : `${senderName} (${count} mensajes)`;
+  const body = count === 1 ? lastBody : `${count} mensajes nuevos`;
 
   require('./notifier').notify({
-    title: sender.name || 'NeuroChat',
+    title,
     body,
+    persistent: true,
     onClick: () => {
-      wins.forEach(w => {
-        if (!w.isDestroyed()) { w.show(); w.focus(); }
-      });
-      // Small delay so the window is painted before the renderer receives the event
+      wins.forEach(w => { if (!w.isDestroyed()) { w.show(); w.focus(); } });
       setTimeout(() => notifyRenderer('notification:navigate', { chatId, chatType }), 250);
     },
   });
+}
+
+function updateTrayBadge() {
+  const count = _unreadTotal;
+  try {
+    const tray = require('./tray');
+    tray.notifyUnread(count > 0, count);
+  } catch {}
+}
+
+function clearUnread() {
+  _unreadTotal = 0;
+  updateTrayBadge();
+}
+
+function clearPendingNotifications() {
+  _pendingNotifs.forEach(entry => {
+    if (entry.timer) clearTimeout(entry.timer);
+  });
+  _pendingNotifs.clear();
 }
 
 // ── Outbound helpers (called by ipcHandlers) ──────────────────────────────────
@@ -243,4 +290,6 @@ module.exports = {
   broadcastDelete,
   broadcastReaction,
   broadcastTyping,
+  clearUnread,
+  clearPendingNotifications,
 };

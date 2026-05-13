@@ -1,6 +1,6 @@
 'use strict';
 
-const { BrowserWindow, app, nativeTheme } = require('electron');
+const { BrowserWindow, app, nativeTheme, dialog } = require('electron');
 const path = require('path');
 
 let mainWindow = null;
@@ -34,9 +34,25 @@ function createMainWindow() {
     mainWindow.show();
   });
 
-  // X button → quit the app (sets isQuitting so before-quit can clean up)
-  mainWindow.on('close', () => {
-    isQuitting = true;
+  // X button → ask user before quitting (closing disables notifications)
+  mainWindow.on('close', e => {
+    if (isQuitting) return; // already confirmed (e.g. from tray menu)
+    e.preventDefault();
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'question',
+      title: 'Cerrar NeuroChat',
+      message: '¿Cerrar NeuroChat?',
+      detail: 'Si cierras la aplicación dejarás de recibir notificaciones de mensajes.',
+      buttons: ['Cerrar y salir', 'Minimizar a la bandeja'],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (choice === 0) {
+      isQuitting = true;
+      app.quit();
+    } else {
+      mainWindow.hide();
+    }
   });
 
   // Minimize button → hide to tray (keeps taskbar clean on Windows)
@@ -51,6 +67,12 @@ function createMainWindow() {
     mainWindow = null;
   });
 
+  // Grant microphone permission for voice notes
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media') return callback(true);
+    callback(false);
+  });
+
   return mainWindow;
 }
 
@@ -62,6 +84,8 @@ function showMainWindow() {
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
+  // Force repaint — prevents blank screen after hide/show cycle
+  mainWindow.webContents.invalidate();
 }
 
 function getMainWindow() {

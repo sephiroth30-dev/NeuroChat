@@ -259,12 +259,44 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
         </div>
 
         <div class="settings-section">
+          <h3>Actualizaciones</h3>
+          <div class="card">
+            <div class="settings-row" style="flex-wrap:wrap;gap:10px">
+              <div class="settings-row-label">
+                <span>Versión actual</span>
+                <small>v<span id="s-version">—</span> · <span id="s-update-info" style="color:var(--nc-text-2)">Haz clic para buscar</span></small>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-ghost" id="s-check-update" style="font-size:12px;padding:5px 12px">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-right:4px"><path d="M21.5 2v6h-6"/><path d="M21.34 15.57a10 10 0 1 1-.57-8.38"/></svg>
+                  Buscar actualizaciones
+                </button>
+                <button class="btn btn-primary hidden" id="s-download-update" style="font-size:12px;padding:5px 12px">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-right:4px"><path d="M12 3v13M5 14l7 7 7-7"/><path d="M3 21h18"/></svg>
+                  Descargar
+                </button>
+                <button class="btn btn-primary hidden" id="s-install-update" style="font-size:12px;padding:5px 12px;background:var(--nc-online)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-right:4px"><path d="m5 12 5 5L20 7"/></svg>
+                  Instalar y reiniciar
+                </button>
+              </div>
+            </div>
+            <div id="s-update-progress" class="hidden" style="padding:0 20px 14px">
+              <div style="height:4px;background:var(--nc-border);border-radius:2px;overflow:hidden">
+                <div id="s-update-bar" style="height:100%;background:var(--nc-primary);width:0%;transition:width .3s"></div>
+              </div>
+              <span id="s-update-pct" style="font-size:11px;color:var(--nc-text-2);margin-top:4px;display:block">0%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <h3>Acerca de</h3>
           <div class="card">
             <div class="settings-row">
               <div class="settings-row-label">
                 <span>NeuroChat</span>
-                <small>by Neurofic · v<span id="s-version">—</span></small>
+                <small>by Neurofic</small>
               </div>
             </div>
           </div>
@@ -400,6 +432,65 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
       ? info.ips.map(i => i.address).join(' · ')
       : 'Sin interfaz detectada';
   });
+
+  // Updates
+  const checkBtn = container.querySelector('#s-check-update');
+  const downloadBtn = container.querySelector('#s-download-update');
+  const installBtn = container.querySelector('#s-install-update');
+  const updateInfo = container.querySelector('#s-update-info');
+  const progressWrap = container.querySelector('#s-update-progress');
+  const progressBar = container.querySelector('#s-update-bar');
+  const progressPct = container.querySelector('#s-update-pct');
+
+  function setUpdateState(state, data = {}) {
+    checkBtn.classList.remove('hidden');
+    downloadBtn.classList.add('hidden');
+    installBtn.classList.add('hidden');
+    progressWrap.classList.add('hidden');
+    checkBtn.disabled = false;
+
+    if (state === 'checking') {
+      updateInfo.textContent = 'Buscando…';
+      checkBtn.disabled = true;
+    } else if (state === 'available') {
+      updateInfo.textContent = `Nueva versión disponible: v${data.version}`;
+      updateInfo.style.color = 'var(--nc-primary)';
+      downloadBtn.classList.remove('hidden');
+    } else if (state === 'latest') {
+      updateInfo.textContent = `Tienes la versión más reciente`;
+      updateInfo.style.color = 'var(--nc-online)';
+    } else if (state === 'downloading') {
+      updateInfo.textContent = `Descargando…`;
+      checkBtn.classList.add('hidden');
+      progressWrap.classList.remove('hidden');
+      const pct = data.percent || 0;
+      progressBar.style.width = `${pct}%`;
+      progressPct.textContent = `${pct}%`;
+    } else if (state === 'ready') {
+      updateInfo.textContent = `v${data.version} lista para instalar`;
+      updateInfo.style.color = 'var(--nc-online)';
+      checkBtn.classList.add('hidden');
+      installBtn.classList.remove('hidden');
+    } else if (state === 'error') {
+      updateInfo.textContent = `Error: ${data.message || 'No se pudo verificar'}`;
+      updateInfo.style.color = 'var(--nc-error, #e74c3c)';
+    }
+  }
+
+  checkBtn.onclick = () => nc.checkForUpdates();
+  downloadBtn.onclick = () => nc.downloadUpdate();
+  installBtn.onclick = () => nc.installUpdate();
+
+  const unsubUpdate = nc.on('update:status', status => {
+    setUpdateState(status.state, status);
+  });
+
+  // Clean up listener when settings panel is closed (back button)
+  const origBack = container.querySelector('#back-btn').onclick;
+  container.querySelector('#back-btn').onclick = () => {
+    if (typeof unsubUpdate === 'function') unsubUpdate();
+    if (typeof origBack === 'function') origBack();
+  };
 }
 
 function statusOption(value, icon, label, current) {

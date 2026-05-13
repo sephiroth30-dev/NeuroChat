@@ -106,7 +106,7 @@ function register() {
         read_by: JSON.parse(m.read_by || '[]'),
         reactions: db.getReactions(m.id),
       };
-      if (m.type === 'file') {
+      if (m.type === 'file' || m.type === 'audio') {
         const fileRec = db.getFileByMsgId(m.id);
         if (fileRec) result.localPath = fileRec.local_path;
       }
@@ -216,6 +216,69 @@ function register() {
   ipcMain.handle('file:accept', (_e, transferId) => fileTransfer.accept(transferId));
   ipcMain.handle('file:reject', (_e, transferId) => fileTransfer.reject(transferId));
   ipcMain.handle('file:open', (_e, localPath) => shell.openPath(localPath));
+
+  ipcMain.handle('file:download', async (_e, srcPath) => {
+    const fs = require('fs');
+    const downloadsDir = path.join(os.homedir(), 'Downloads');
+    if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
+
+    const ext = path.extname(srcPath);
+    const base = path.basename(srcPath, ext);
+    let destPath = path.join(downloadsDir, path.basename(srcPath));
+    let counter = 1;
+    while (fs.existsSync(destPath)) {
+      destPath = path.join(downloadsDir, `${base} (${counter})${ext}`);
+      counter++;
+    }
+    try {
+      fs.copyFileSync(srcPath, destPath);
+      shell.showItemInFolder(destPath);
+      return { ok: true, path: destPath };
+    } catch (err) {
+      console.error('[file:download]', err.message);
+      shell.openPath(srcPath).catch(() => {});
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('audio:send', async (_e, { buffer, name, mimeType = 'audio/webm', chatType, chatId }) => {
+    const profile = db.getProfile();
+    if (!profile) return { ok: false };
+    const fs = require('fs');
+    const { app: electronApp } = require('electron');
+
+    const buf = Buffer.from(buffer);
+    const audioDir = path.join(electronApp.getPath('userData'), 'audio');
+    if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir, { recursive: true });
+    const localPath = path.join(audioDir, name);
+    fs.writeFileSync(localPath, buf);
+
+    const messageId = crypto.randomUUID();
+    const size = buf.length;
+    const base64 = buf.toString('base64');
+
+    const message = {
+      id: messageId,
+      channel_id: chatType === 'channel' ? chatId : null,
+      private_chat_uuid: chatType === 'dm' ? buildChatId(profile.uuid, chatId) : null,
+      from_uuid: profile.uuid,
+      content: JSON.stringify({ name, size, mimeType, data: base64 }),
+      type: 'audio',
+      reply_to: null,
+      timestamp: Date.now(),
+      edited: 0,
+      deleted: 0,
+      delivered: 0,
+      read_by: [],
+    };
+    db.saveMessage(message);
+    db.saveFile({
+      id: crypto.randomUUID(), message_id: messageId, original_name: name,
+      local_path: localPath, size, mime_type: mimeType, sha256: '', timestamp: Date.now(),
+    });
+    wsServer.broadcast(message);
+    return { ok: true };
+  });
   ipcMain.handle('file:chooseAvatar', async () => {
     const win = windowManager.getMainWindow();
     const result = await dialog.showOpenDialog(win, {
@@ -431,6 +494,12 @@ function register() {
   ipcMain.handle('diagnostics:firewall', () => diagnostics.addFirewallRules());
 
   // ── App info ───────────────────────────────────────────────────────────────
+
+  // ── Updates ───────────────────────────────────────────────────────────────
+
+  ipcMain.handle('update:check', () => require('./updater').checkForUpdates());
+  ipcMain.handle('update:download', () => require('./updater').downloadUpdate());
+  ipcMain.handle('update:install', () => require('./updater').installUpdate());
 
   ipcMain.handle('app:version', () => app.getVersion());
 

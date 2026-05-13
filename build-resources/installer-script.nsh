@@ -1,6 +1,12 @@
 ; NeuroChat NSIS custom installer script
 ; Adds Windows Firewall exceptions for NeuroChat ports
 
+; Kill any running instance before files are replaced
+!macro customInit
+  nsExec::ExecToLog 'taskkill /F /IM "NeuroChat.exe" /T'
+  Sleep 1000
+!macroend
+
 !macro customInstall
   ; Add firewall rules for all three ports
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="NeuroChat UDP"'

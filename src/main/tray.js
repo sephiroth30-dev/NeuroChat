@@ -96,20 +96,23 @@ function updateStatus(status) {
   trayInstance.setContextMenu(buildMenu());
 }
 
-function notifyUnread(hasUnread) {
+function notifyUnread(hasUnread, count = 0) {
   if (!trayInstance) return;
   _hasUnread = hasUnread;
 
   trayInstance.setImage(getTrayIcon(hasUnread));
 
-  if (process.platform === 'darwin') {
-    if (hasUnread) {
-      app.dock.bounce('informational'); // one bounce on macOS dock
-    }
+  if (process.platform === 'darwin' && hasUnread) {
+    app.dock.bounce('informational');
   }
 
-  // Update tooltip to reflect unread state
-  updateStatus(_currentStatus);
+  // Show unread count in tooltip
+  const label = STATUS_LABELS[_currentStatus] || _currentStatus;
+  const unreadPart = count > 0
+    ? ` · ${count} mensaje${count !== 1 ? 's' : ''} sin leer`
+    : hasUnread ? ' · Mensajes pendientes' : '';
+  trayInstance.setToolTip(`NeuroChat — ${label}${unreadPart}`);
+  trayInstance.setContextMenu(buildMenu());
 }
 
 function destroy() {

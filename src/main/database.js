@@ -275,8 +275,8 @@ function deleteChannel(id) {
 function getMessages({ channelId, privateChatUuid, limit = 50, before = null }) {
   if (channelId) {
     const q = before
-      ? 'SELECT * FROM messages WHERE channel_id = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?'
-      : 'SELECT * FROM messages WHERE channel_id = ? ORDER BY timestamp DESC LIMIT ?';
+      ? 'SELECT * FROM messages WHERE channel_id = ? AND timestamp < ? ORDER BY timestamp DESC, rowid DESC LIMIT ?'
+      : 'SELECT * FROM messages WHERE channel_id = ? ORDER BY timestamp DESC, rowid DESC LIMIT ?';
     const rows = before
       ? db.prepare(q).all(channelId, before, limit)
       : db.prepare(q).all(channelId, limit);
@@ -286,8 +286,8 @@ function getMessages({ channelId, privateChatUuid, limit = 50, before = null }) 
     const myUuid = getProfile()?.uuid;
     const normalizedId = [myUuid, privateChatUuid].sort().join(':');
     const q = before
-      ? `SELECT * FROM messages WHERE private_chat_uuid = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?`
-      : `SELECT * FROM messages WHERE private_chat_uuid = ? ORDER BY timestamp DESC LIMIT ?`;
+      ? `SELECT * FROM messages WHERE private_chat_uuid = ? AND timestamp < ? ORDER BY timestamp DESC, rowid DESC LIMIT ?`
+      : `SELECT * FROM messages WHERE private_chat_uuid = ? ORDER BY timestamp DESC, rowid DESC LIMIT ?`;
     const rows = before
       ? db.prepare(q).all(normalizedId, before, limit)
       : db.prepare(q).all(normalizedId, limit);

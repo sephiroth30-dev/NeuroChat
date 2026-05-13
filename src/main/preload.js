@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('neurochat', {
   acceptFile: transferId => ipcRenderer.invoke('file:accept', transferId),
   rejectFile: transferId => ipcRenderer.invoke('file:reject', transferId),
   openFile: localPath => ipcRenderer.invoke('file:open', localPath),
+  downloadFile: localPath => ipcRenderer.invoke('file:download', localPath),
+  sendAudio: opts => ipcRenderer.invoke('audio:send', opts),
   chooseDownloadDir: () => ipcRenderer.invoke('file:chooseDir'),
   chooseAvatar: () => ipcRenderer.invoke('file:chooseAvatar'),
 
@@ -94,6 +96,7 @@ contextBridge.exposeInMainWorld('neurochat', {
       'status:set-from-tray',
       'system:idle',
       'system:active',
+      'update:status',
     ];
     if (!allowed.includes(channel)) return;
     const listener = (_e, ...args) => fn(...args);
@@ -105,6 +108,11 @@ contextBridge.exposeInMainWorld('neurochat', {
   once: (channel, fn) => {
     ipcRenderer.once(channel, (_e, ...args) => fn(...args));
   },
+
+  // Updates
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
 
   // App info
   getVersion: () => ipcRenderer.invoke('app:version'),

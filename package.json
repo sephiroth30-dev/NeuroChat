@@ -1,6 +1,6 @@
 {
   "name": "neurochat",
-  "version": "1.1.0-beta.10",
+  "version": "2.1.0",
   "description": "Mensajería interna LAN para Neurofit",
   "main": "src/main/index.js",
   "author": "Neurofit",
@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^9.4.3",
+    "electron-updater": "^6.8.3",
     "ws": "^8.16.0"
   },
   "devDependencies": {

@@ -15,10 +15,16 @@ VERSION=$(node -p "require('./package.json').version")
 TAG="v${VERSION}"
 DIST_DIR="dist"
 
-EXE="${DIST_DIR}/NeuroChat Setup ${VERSION}.exe"
+EXE="${DIST_DIR}/NeuroChat-Setup-${VERSION}.exe"
 DMG="${DIST_DIR}/NeuroChat-${VERSION}.dmg"
+[ ! -f "$EXE" ] && EXE=$(find "$DIST_DIR" -maxdepth 1 -name "NeuroChat-Setup-*.exe" | sort -V | tail -1)
 [ ! -f "$EXE" ] && EXE=$(find "$DIST_DIR" -maxdepth 1 -name "NeuroChat Setup *.exe" | sort -V | tail -1)
 [ ! -f "$DMG" ] && DMG=$(find "$DIST_DIR" -maxdepth 1 -name "NeuroChat-*.dmg" | sort -V | tail -1)
+
+ZIP="${DIST_DIR}/NeuroChat-${VERSION}.zip"
+[ ! -f "$ZIP" ] && ZIP=$(find "$DIST_DIR" -maxdepth 1 -name "NeuroChat-*.zip" | sort -V | tail -1)
+WIN_YML="${DIST_DIR}/latest.yml"
+MAC_YML="${DIST_DIR}/latest-mac.yml"
 
 if [ -z "$EXE" ] && [ -z "$DMG" ]; then
   echo "ERROR: No .exe or .dmg found in $DIST_DIR. Run 'npm run build:win' and/or 'npm run build:mac' first."
@@ -27,7 +33,10 @@ fi
 
 echo "► Releasing $TAG"
 [ -n "$EXE" ] && echo "  Windows : $(basename "$EXE")"
+[ -f "$WIN_YML" ] && echo "  Win YML : latest.yml"
 [ -n "$DMG" ] && echo "  macOS   : $(basename "$DMG")"
+[ -n "$ZIP" ] && echo "  Mac ZIP : $(basename "$ZIP")"
+[ -f "$MAC_YML" ] && echo "  Mac YML : latest-mac.yml"
 
 # ── Helper: upload one asset (deletes existing with same name first) ──────────
 upload_asset() {
@@ -102,7 +111,10 @@ fi
 
 # ── Upload assets ─────────────────────────────────────────────────────────────
 [ -n "$EXE" ] && upload_asset "$RELEASE_ID" "$EXE"
+[ -f "$WIN_YML" ] && upload_asset "$RELEASE_ID" "$WIN_YML"
 [ -n "$DMG" ] && upload_asset "$RELEASE_ID" "$DMG"
+[ -n "$ZIP" ] && upload_asset "$RELEASE_ID" "$ZIP"
+[ -f "$MAC_YML" ] && upload_asset "$RELEASE_ID" "$MAC_YML"
 
 echo ""
 echo "✓ Release publicada: https://github.com/${REPO}/releases/tag/${TAG}"

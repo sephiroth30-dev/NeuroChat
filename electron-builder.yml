@@ -24,11 +24,16 @@ asar: true
 asarUnpack:
   - node_modules/better-sqlite3/**/*
 
+publish:
+  provider: github
+  owner: sephiroth30-dev
+  repo: NeuroChat
+  releaseType: release
+
 win:
   target: nsis
   icon: assets/icon.ico
-  # asInvoker: app runs as the launching user; the NSIS installer handles
-  # firewall rules at install time with its own elevated UAC manifest.
+  artifactName: NeuroChat-Setup-${version}.exe
   requestedExecutionLevel: asInvoker
 
 nsis:
@@ -42,14 +47,14 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: NeuroChat
   include: installer-script.nsh
-  # Path is relative to buildResources (build-resources/)
 
 mac:
-  target: dmg
+  target:
+    - dmg
+    - zip
   icon: assets/icon.icns
   category: public.app-category.business
-  # Code signing disabled via CSC_IDENTITY_AUTO_DISCOVERY=false in CI env.
-  # Internal tool: users open with right-click → Abrir on first launch.
+  artifactName: NeuroChat-${version}.${ext}
 
 dmg:
   title: NeuroChat ${version}

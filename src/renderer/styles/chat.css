@@ -88,22 +88,20 @@
   margin-top: auto;
 }
 
-/* Date separator */
+/* Date separator — pill style */
 .date-separator {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  justify-content: center;
   margin: 16px 0 8px;
-  color: var(--nc-text-2);
-  font-size: 12px;
-  font-weight: 500;
 }
-.date-separator::before,
-.date-separator::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--nc-border);
+.date-separator span {
+  background: var(--nc-bubble-in);
+  color: var(--nc-text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 8px;
+  box-shadow: var(--nc-shadow);
 }
 
 /* Message row */
@@ -127,8 +125,8 @@
 .msg-bubble {
   max-width: 68%;
   min-width: 60px;
-  padding: 8px 12px;
-  border-radius: 12px;
+  padding: 7px 12px 6px;
+  border-radius: 8px;
   background: var(--nc-bubble-in);
   box-shadow: var(--nc-shadow);
   position: relative;
@@ -138,10 +136,17 @@
 }
 .msg-row.outgoing .msg-bubble {
   background: var(--nc-bubble-out);
-  border-bottom-right-radius: 4px;
+  border-top-right-radius: 0;
 }
 .msg-row:not(.outgoing) .msg-bubble {
-  border-bottom-left-radius: 4px;
+  border-top-left-radius: 0;
+}
+/* Outgoing text color legible on dark teal */
+@media (prefers-color-scheme: dark) {
+  .msg-row.outgoing .msg-bubble { color: #e9edef; }
+  .msg-row.outgoing .msg-time { color: rgba(233,237,239,0.6); }
+  .msg-row.outgoing .msg-status { color: rgba(233,237,239,0.6); }
+  .msg-row.outgoing .msg-status.read { color: #53bdeb; }
 }
 
 /* Sender name (channels) */
@@ -155,8 +160,7 @@
 /* Message text */
 .msg-text {
   color: var(--nc-text);
-  text-align: justify;
-  hyphens: auto;
+  text-align: left;
   line-height: 1.5;
 }
 .msg-text strong {
@@ -398,7 +402,7 @@
 
 /* ─── Input area ─────────────────────────────────────────────────────────── */
 .input-area {
-  padding: 12px 16px 16px;
+  padding: 8px 14px 12px;
   background: var(--nc-sidebar);
   border-top: 1px solid var(--nc-border);
   flex-shrink: 0;
@@ -436,16 +440,20 @@
 
 .input-row {
   display: flex;
-  align-items: flex-end;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
   background: var(--nc-input-bg);
   border: 1.5px solid var(--nc-border);
   border-radius: var(--nc-radius-lg);
-  padding: 6px 8px;
+  padding: 4px 6px;
   transition: border-color var(--nc-transition);
 }
 .input-row:focus-within {
   border-color: var(--nc-primary);
+}
+.input-row .icon-btn {
+  width: 28px;
+  height: 28px;
 }
 
 .message-input-wrap {
@@ -455,16 +463,16 @@
 
 .message-input {
   width: 100%;
-  min-height: 24px;
+  min-height: 22px;
   max-height: 120px;
   overflow-y: auto;
-  padding: 4px 4px;
-  font-size: 14px;
+  padding: 3px 4px;
+  font-size: 13.5px;
   color: var(--nc-text);
   white-space: pre-wrap;
   word-break: break-word;
   outline: none;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 .message-input:empty::before {
   content: attr(data-placeholder);
@@ -479,8 +487,8 @@
 }
 
 .send-btn {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--nc-primary);
   color: white;
@@ -529,4 +537,94 @@
 }
 .emoji-picker button:hover {
   background: var(--nc-input-bg);
+}
+
+/* ─── Recording indicator ───────────────────────────────────────────────── */
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px 3px 10px;
+  background: color-mix(in srgb, #e74c3c 12%, transparent);
+  border-radius: var(--nc-radius-lg);
+  font-size: 12px;
+  color: #e74c3c;
+  flex: 1;
+}
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e74c3c;
+  flex-shrink: 0;
+  animation: rec-pulse 1s infinite;
+}
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+#rec-timer {
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+}
+.mic-btn.recording { color: #e74c3c; }
+.rec-wave {
+  flex: 1;
+  height: 24px;
+  min-width: 90px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.rec-wave span {
+  width: 3px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.75;
+  transition: height 80ms linear, opacity 80ms linear;
+}
+
+/* ─── Audio bubble ──────────────────────────────────────────────────────── */
+.audio-bubble {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 200px;
+  padding: 2px 0;
+}
+.audio-bubble.pending { opacity: 0.6; }
+.audio-play-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--nc-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background var(--nc-transition);
+}
+.audio-play-btn:hover { background: var(--nc-primary-dk); }
+.audio-play-btn:disabled { opacity: 0.45; cursor: default; }
+.audio-wave {
+  flex: 1;
+  height: 30px;
+  color: var(--nc-primary);
+  opacity: 0.85;
+}
+.audio-wave svg { width: 100%; height: 100%; fill: currentColor; }
+.audio-dur {
+  font-size: 11px;
+  color: var(--nc-text-2);
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-color-scheme: dark) {
+  .msg-row.outgoing .audio-play-btn { background: rgba(255,255,255,0.2); }
+  .msg-row.outgoing .audio-play-btn:hover { background: rgba(255,255,255,0.3); }
+  .msg-row.outgoing .audio-wave { color: rgba(233,237,239,0.7); }
+  .msg-row.outgoing .audio-dur { color: rgba(233,237,239,0.55); }
 }
