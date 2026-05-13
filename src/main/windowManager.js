@@ -25,6 +25,7 @@ function createMainWindow() {
       nodeIntegration: false,
       sandbox: false,
       spellcheck: false,
+      backgroundThrottling: false,
     },
   });
 
@@ -55,16 +56,20 @@ function createMainWindow() {
     }
   });
 
-  // Minimize button → hide to tray (keeps taskbar clean on Windows)
-  mainWindow.on('minimize', e => {
-    if (process.platform !== 'darwin') {
-      e.preventDefault();
-      mainWindow.hide();
-    }
-  });
-
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  mainWindow.on('unresponsive', () => {
+    console.warn('[Window] Renderer sin respuesta, recargando ventana principal');
+    mainWindow?.webContents.reloadIgnoringCache();
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[Window] Renderer finalizó: ${details.reason}`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.reloadIgnoringCache();
+    }
   });
 
   // Grant microphone permission for voice notes
@@ -84,6 +89,7 @@ function showMainWindow() {
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
+  mainWindow.flashFrame(false);
   // Force repaint — prevents blank screen after hide/show cycle
   mainWindow.webContents.invalidate();
 }

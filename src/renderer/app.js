@@ -115,17 +115,33 @@ function playNotifSound() {
     if (!_audioCtx) _audioCtx = new AudioContext();
     const ctx = _audioCtx;
     ctx.resume?.();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.15);
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.25);
+
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, ctx.currentTime);
+    master.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.015);
+    master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.62);
+    master.connect(ctx.destination);
+
+    const notes = [
+      { f: 740, at: 0.00, dur: 0.16 },
+      { f: 988, at: 0.11, dur: 0.18 },
+      { f: 1318, at: 0.24, dur: 0.28 },
+    ];
+
+    notes.forEach(({ f, at, dur }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, ctx.currentTime + at);
+      osc.frequency.exponentialRampToValueAtTime(f * 0.985, ctx.currentTime + at + dur);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + at);
+      gain.gain.exponentialRampToValueAtTime(0.55, ctx.currentTime + at + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + dur);
+      osc.connect(gain);
+      gain.connect(master);
+      osc.start(ctx.currentTime + at);
+      osc.stop(ctx.currentTime + at + dur + 0.02);
+    });
   } catch {}
 }
 

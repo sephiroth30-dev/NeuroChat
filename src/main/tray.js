@@ -53,6 +53,7 @@ function showWindow() {
     if (_mainWindow.isMinimized()) _mainWindow.restore();
     if (!_mainWindow.isVisible()) _mainWindow.show();
     _mainWindow.focus();
+    _mainWindow.flashFrame(false);
   }
 }
 
@@ -101,6 +102,7 @@ function notifyUnread(hasUnread, count = 0) {
   _hasUnread = hasUnread;
 
   trayInstance.setImage(getTrayIcon(hasUnread));
+  updateTaskbarUnread(hasUnread, count);
 
   if (process.platform === 'darwin' && hasUnread) {
     app.dock.bounce('informational');
@@ -113,6 +115,25 @@ function notifyUnread(hasUnread, count = 0) {
     : hasUnread ? ' · Mensajes pendientes' : '';
   trayInstance.setToolTip(`NeuroChat — ${label}${unreadPart}`);
   trayInstance.setContextMenu(buildMenu());
+}
+
+function updateTaskbarUnread(hasUnread, count) {
+  if (!_mainWindow || _mainWindow.isDestroyed()) return;
+
+  if (process.platform === 'win32') {
+    if (hasUnread) {
+      _mainWindow.setOverlayIcon(loadIcon('tray-notify.ico'), `${count || 1} mensaje(s) sin leer`);
+      _mainWindow.flashFrame(true);
+    } else {
+      _mainWindow.setOverlayIcon(null, '');
+      _mainWindow.flashFrame(false);
+    }
+    return;
+  }
+
+  if (process.platform === 'darwin') {
+    app.dock.setBadge(hasUnread && count > 0 ? String(count) : '');
+  }
 }
 
 function destroy() {
