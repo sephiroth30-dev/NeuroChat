@@ -413,7 +413,7 @@ function register() {
 
   ipcMain.handle('dm:delete', (_e, peerUuid) => {
     db.deleteDMMessages(peerUuid);
-    db.setHiddenDM(peerUuid, false);
+    db.setHiddenDM(peerUuid, true);
     return { ok: true };
   });
 
