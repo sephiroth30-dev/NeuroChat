@@ -1636,6 +1636,7 @@ function bindEvents() {
 
   // New channel button
   $('new-channel-btn').onclick = () => showNewChannelModal();
+  $('broadcast-btn').onclick = () => showBroadcastModal();
 
   // Search input
   let searchTimer = null;
@@ -1908,6 +1909,103 @@ function showNewChannelModal() {
   });
 }
 
+// ── Broadcast modal ──────────────────────────────────────────────────────────
+function showBroadcastModal() {
+  const overlay = $('modal-overlay');
+  const box = $('modal-box');
+  const recipients = cachedUsers
+    .filter(u => u.uuid !== myProfile?.uuid)
+    .sort((a, b) => {
+      if (!!a.is_online !== !!b.is_online) return a.is_online ? -1 : 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+  const recipientRows = recipients.length
+    ? recipients
+        .map(
+          u => `
+        <label class="broadcast-recipient${u.is_online ? '' : ' offline'}">
+          <input type="checkbox" class="broadcast-check" value="${escHtml(u.uuid)}" checked />
+          <span class="avatar small" style="background:${escHtml(u.color || '#4A9E8F')}">${escHtml(getInitials(u.name))}</span>
+          <span class="broadcast-recipient-info">
+            <span class="broadcast-recipient-name">${escHtml(u.name || 'Usuario')}</span>
+            <span class="broadcast-recipient-status">${u.is_online ? 'Conectado' : 'Desconectado'}</span>
+          </span>
+        </label>`
+        )
+        .join('')
+    : '<div class="broadcast-empty">No hay usuarios detectados para enviar difusión.</div>';
+
+  box.innerHTML = `
+    <h2>Mensaje de difusión</h2>
+    <div class="form-group">
+      <label>Mensaje</label>
+      <textarea class="form-input broadcast-textarea" id="broadcast-message" placeholder="Escribe el mensaje para enviar a varios usuarios..." rows="4" maxlength="2000"></textarea>
+    </div>
+    <div class="broadcast-toolbar">
+      <span id="broadcast-count">0 seleccionados</span>
+      <div class="broadcast-actions">
+        <button class="btn btn-ghost btn-sm" id="broadcast-all-btn">Todos</button>
+        <button class="btn btn-ghost btn-sm" id="broadcast-online-btn">Conectados</button>
+        <button class="btn btn-ghost btn-sm" id="broadcast-none-btn">Ninguno</button>
+      </div>
+    </div>
+    <div class="broadcast-recipient-list">${recipientRows}</div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-ghost" id="cancel-broadcast-btn" style="flex:1">Cancelar</button>
+      <button class="btn btn-primary" id="send-broadcast-btn" style="flex:1">Enviar difusión</button>
+    </div>`;
+
+  overlay.classList.remove('hidden');
+  $('broadcast-message').focus();
+
+  const checks = () => Array.from(box.querySelectorAll('.broadcast-check'));
+  const updateCount = () => {
+    const selected = checks().filter(ch => ch.checked).length;
+    $('broadcast-count').textContent = `${selected} seleccionado${selected === 1 ? '' : 's'}`;
+    $('send-broadcast-btn').disabled = selected === 0;
+  };
+
+  box.querySelectorAll('.broadcast-check').forEach(ch => ch.addEventListener('change', updateCount));
+  $('broadcast-all-btn').onclick = () => {
+    checks().forEach(ch => (ch.checked = true));
+    updateCount();
+  };
+  $('broadcast-online-btn').onclick = () => {
+    const online = new Set(recipients.filter(u => u.is_online).map(u => u.uuid));
+    checks().forEach(ch => (ch.checked = online.has(ch.value)));
+    updateCount();
+  };
+  $('broadcast-none-btn').onclick = () => {
+    checks().forEach(ch => (ch.checked = false));
+    updateCount();
+  };
+  $('cancel-broadcast-btn').onclick = () => overlay.classList.add('hidden');
+  $('send-broadcast-btn').onclick = async () => {
+    const content = $('broadcast-message').value.trim();
+    const toUuids = checks()
+      .filter(ch => ch.checked)
+      .map(ch => ch.value);
+
+    if (!content) {
+      $('broadcast-message').focus();
+      return;
+    }
+    if (!toUuids.length) {
+      showToast('Selecciona al menos un destinatario', 'warn');
+      return;
+    }
+
+    $('send-broadcast-btn').disabled = true;
+    const result = await nc.sendBroadcast({ content, toUuids });
+    overlay.classList.add('hidden');
+    await loadSidebar();
+    showToast(result?.sent ? `Difusión enviada a ${result.sent} usuario${result.sent === 1 ? '' : 's'}` : 'No se pudo enviar la difusión', result?.sent ? '' : 'error');
+  };
+
+  updateCount();
+}
+
 // Close modal on overlay click
 $('modal-overlay').addEventListener('click', e => {
   if (e.target === $('modal-overlay')) $('modal-overlay').classList.add('hidden');
@@ -2065,6 +2163,16 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function getInitials(name) {
+  return String(name || '?')
+    .trim()
+    .split(/\s+/)
+    .map(part => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 }
 
 function formatText(text) {

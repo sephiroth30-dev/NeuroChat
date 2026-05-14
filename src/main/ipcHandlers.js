@@ -121,6 +121,7 @@ function register() {
 
   ipcMain.handle('messages:send', (_e, msg) => {
     const profile = db.getProfile();
+    if (!profile) return null;
     const message = {
       id: crypto.randomUUID(),
       channel_id: msg.channelId || null,
@@ -136,8 +137,41 @@ function register() {
       read_by: [],
     };
     db.saveMessage(message);
+    if (msg.toUuid) db.setHiddenDM(msg.toUuid, false);
     wsServer.broadcast(message);
     return message;
+  });
+
+  ipcMain.handle('messages:broadcast', (_e, msg) => {
+    const profile = db.getProfile();
+    const content = String(msg.content || '').trim();
+    if (!profile) return { ok: false, sent: 0 };
+
+    const targetUuids = Array.from(new Set(msg.toUuids || [])).filter(uuid => uuid && uuid !== profile.uuid);
+    if (!content || !targetUuids.length) return { ok: false, sent: 0 };
+
+    const messages = targetUuids.map(toUuid => {
+      const message = {
+        id: crypto.randomUUID(),
+        channel_id: null,
+        private_chat_uuid: buildChatId(profile.uuid, toUuid),
+        from_uuid: profile.uuid,
+        content,
+        type: 'text',
+        reply_to: null,
+        timestamp: Date.now(),
+        edited: 0,
+        deleted: 0,
+        delivered: 0,
+        read_by: [],
+      };
+      db.saveMessage(message);
+      db.setHiddenDM(toUuid, false);
+      wsServer.broadcast(message);
+      return message;
+    });
+
+    return { ok: true, sent: messages.length, messages };
   });
 
   ipcMain.handle('messages:edit', (_e, id, content) => {

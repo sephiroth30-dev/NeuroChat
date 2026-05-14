@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('neurochat', {
   // Messages
   getMessages: opts => ipcRenderer.invoke('messages:get', opts),
   sendMessage: msg => ipcRenderer.invoke('messages:send', msg),
+  sendBroadcast: msg => ipcRenderer.invoke('messages:broadcast', msg),
   editMessage: (id, content) => ipcRenderer.invoke('messages:edit', id, content),
   deleteMessage: id => ipcRenderer.invoke('messages:delete', id),
   sendReaction: (msgId, emoji) => ipcRenderer.invoke('messages:react', msgId, emoji),
