@@ -59,7 +59,7 @@ function handleIncoming(msg) {
   if (type === 'MESSAGE') {
     if (!msg.id || !msg.fromUuid) return;
 
-    const record = {
+    let record = {
       id: msg.id,
       channel_id: msg.channelId || null,
       private_chat_uuid:
@@ -77,7 +77,37 @@ function handleIncoming(msg) {
       delivered: 1,
       read_by: [],
     };
-    db.saveMessage(record); // ON CONFLICT DO NOTHING — safe to call multiple times
+
+    // For incoming audio: extract base64, save to disk, strip data from DB content
+    if (record.type === 'audio') {
+      try {
+        const meta = JSON.parse(record.content || '{}');
+        if (meta.data && meta.name) {
+          const { app: electronApp } = require('electron');
+          const nodeFs = require('fs');
+          const nodePath = require('path');
+          const nodeCrypto = require('crypto');
+          const audioDir = nodePath.join(electronApp.getPath('userData'), 'audio');
+          nodeFs.mkdirSync(audioDir, { recursive: true });
+          const localPath = nodePath.join(audioDir, meta.name);
+          nodeFs.writeFileSync(localPath, Buffer.from(meta.data, 'base64'));
+          record = { ...record, content: JSON.stringify({ name: meta.name, size: meta.size, mimeType: meta.mimeType }) };
+          db.saveMessage(record);
+          db.saveFile({
+            id: nodeCrypto.randomUUID(), message_id: record.id, original_name: meta.name,
+            local_path: localPath, size: meta.size || 0, mime_type: meta.mimeType || 'audio/webm',
+            sha256: '', timestamp: Date.now(),
+          });
+        } else {
+          db.saveMessage(record);
+        }
+      } catch (err) {
+        console.warn('[wsServer] audio save error:', err.message);
+        db.saveMessage(record);
+      }
+    } else {
+      db.saveMessage(record); // ON CONFLICT DO NOTHING — safe to call multiple times
+    }
 
     const sender = db.getAllUsers().find(u => u.uuid === msg.fromUuid) || {};
     const channel = msg.channelId ? db.getChannels().find(c => c.id === msg.channelId) : null;
@@ -190,6 +220,7 @@ function buildBody(record) {
   if (record.type === 'file') {
     try { return `📎 ${JSON.parse(record.content).name}`; } catch { return '📎 Archivo'; }
   }
+  if (record.type === 'audio') return '🎤 Nota de voz';
   return String(record.content || '').slice(0, 80);
 }
 

@@ -545,12 +545,12 @@ function scrollMessagesToBottom() {
 
   const pin = () => {
     list.scrollTop = list.scrollHeight;
-    list.lastElementChild?.scrollIntoView({ block: 'end' });
+    $('messages-inner').lastElementChild?.scrollIntoView({ block: 'end', behavior: 'instant' });
   };
 
   pin();
   requestAnimationFrame(pin);
-  setTimeout(pin, 60);
+  setTimeout(pin, 80);
 }
 
 function fileUrlFromPath(localPath) {
