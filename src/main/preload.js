@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld('neurochat', {
   hideDM: peerUuid => ipcRenderer.invoke('dm:hide', peerUuid),
   unhideDM: peerUuid => ipcRenderer.invoke('dm:unhide', peerUuid),
   deleteDMConversation: peerUuid => ipcRenderer.invoke('dm:delete', peerUuid),
+  deleteUser: peerUuid => ipcRenderer.invoke('user:delete', peerUuid),
   getHiddenDMs: () => ipcRenderer.invoke('dm:hidden'),
 
   // Channel info & member management

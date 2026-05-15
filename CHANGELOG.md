@@ -5,6 +5,30 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.1.9] — 2026-05-15 — Mensajes encolados, tray obligatorio, eliminación de contactos y notificaciones visibles
+
+### Corregido
+- **Mensajes perdidos al escribir a usuarios desconectados** (`wsServer.js`): `setUserOffline()` marcaba al usuario con `isOnline: false` pero lo dejaba en el Map; `getOnlineUsers()` lo devolvía igual, el broadcast lo encontraba como "presente" y mandaba el mensaje por WebSocket —que fallaba silenciosamente— en lugar de encolarlo. Se agrega filtro `u.isOnline !== false` en el lookup del broadcast DM.
+- **Mensajes perdidos cuando el WebSocket falla en tránsito** (`wsClient.js`): al fallar la conexión WebSocket, los mensajes pendientes en `_queue` se descartaban sin re-encolarlos. Ahora los handlers `on('error')` y `on('close')` devuelven cada mensaje a `store.queueMessage()` para entregarlos cuando el destinatario vuelva a estar en línea. Los mensajes se almacenan como objetos (no strings) para permitir el re-encolado.
+- **Botón X cerraba la app completamente** (`windowManager.js`): el diálogo de confirmación permitía salir con un clic accidental. Ahora el botón X siempre minimiza al tray sin mostrar diálogo. La única salida es "Salir" en el menú del ícono de bandeja.
+
+### Añadido
+- **Eliminación completa de contactos** (`database.js`, `ipcHandlers.js`, `preload.js`, `app.js`): al hacer clic derecho sobre un contacto y seleccionar "Eliminar contacto":
+  - **Si está desconectado**: elimina el contacto de la BD, borra toda la conversación, descarta mensajes pendientes en cola y lo remueve de la lista de ocultos. Si el usuario vuelve a conectarse a la red, reaparecerá automáticamente.
+  - **Si está conectado**: muestra aviso de que no puede eliminarse el contacto mientras está en línea, y ofrece eliminar solo la conversación. Si el usuario se conectó entre el clic y la confirmación, el backend lo detecta y hace fallback automático a borrado de conversación.
+  - Handler `user:delete` en IPC con verificación de estado online en el main process (fuente de verdad), evitando race conditions.
+
+### Mejorado — Notificaciones y visibilidad
+- **Taskbar flashea siempre** (`ipcHandlers.js`): se removió el guard `!win.isFocused()` en `app:flash`. Ahora el ícono de la barra de tareas flashea con color naranja incluso cuando la app está abierta en primer plano pero el usuario está en otro chat.
+- **Mensajes de canal con popup visible** (`app.js`): los mensajes de canal ya no muestran solo un toast discreto abajo. Ahora usan el mismo popup deslizante que los DMs, con nombre del remitente, preview del texto y botón "Ver" para ir al canal directamente.
+- **Notificaciones apilables** (`app.js`): el popup soporta hasta 3 tarjetas simultáneas apiladas verticalmente. Si llega una cuarta, se elimina la más antigua. Al cerrar una tarjeta, las demás se reposicionan automáticamente.
+- **Animación de entrada desde la derecha** (`main.css`): el popup ahora desliza desde el borde derecho de la pantalla con un rebote suave (`notifPop`), más llamativo que el deslizamiento vertical anterior.
+- **Borde de acento izquierdo** (`main.css`): cada tarjeta muestra un borde izquierdo de 4px en el color del contacto (DM) o el color corporativo (canal), haciendo la fuente del mensaje inmediatamente reconocible.
+- **Sombra más prominente** (`main.css`): `box-shadow` con tres capas para mayor profundidad y contraste contra el fondo de la app.
+- **Autostart por defecto** (`ipcHandlers.js`): ya activo desde versiones anteriores — en el primer arranque, `openAtLogin: true` se establece automáticamente vía `app.setLoginItemSettings` sin que el usuario tenga que activarlo manualmente.
+
+---
+
 ## [1.0.0] — 2026-05-08 — Fase 1: Esqueleto del proyecto
 
 ### Añadido

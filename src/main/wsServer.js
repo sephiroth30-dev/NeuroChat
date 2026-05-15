@@ -283,7 +283,8 @@ function broadcast(message) {
   } else if (message.private_chat_uuid) {
     const toUuid = message.private_chat_uuid.split(':').find(id => id !== profile.uuid);
     if (!toUuid) return;
-    const peer = store.getOnlineUsers().find(u => u.uuid === toUuid);
+    // Only consider truly online peers (isOnline !== false filters out timeout-marked users)
+    const peer = store.getOnlineUsers().find(u => u.uuid === toUuid && u.isOnline !== false);
     if (peer) {
       wsClient.sendTo(peer, { ...base, toUuid });
     } else {

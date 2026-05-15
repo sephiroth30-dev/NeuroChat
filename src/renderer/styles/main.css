@@ -389,31 +389,42 @@ img {
   margin-top: 4px;
 }
 
-/* ─── DM notification popup card ───────────────────────────────────────── */
+/* ─── DM / channel notification popup card ──────────────────────────────── */
 .dm-notification {
   position: fixed;
-  top: 14px;
   right: 14px;
   display: flex;
   align-items: center;
   gap: 12px;
   background: var(--nc-sidebar);
   border: 1px solid var(--nc-border);
+  border-left: 4px solid var(--notif-accent, #4A9E8F);
   border-radius: var(--nc-radius-lg);
   padding: 12px 14px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  box-shadow:
+    0 4px 6px rgba(0, 0, 0, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.22),
+    0 0 0 1px rgba(0, 0, 0, 0.06);
   z-index: 3000;
-  max-width: 340px;
+  max-width: 360px;
   width: calc(100% - 28px);
-  transform: translateY(-12px);
+  transform: translateX(calc(100% + 20px));
   opacity: 0;
   transition:
-    transform 0.22s ease,
-    opacity 0.22s ease;
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.28s ease,
+    top 0.2s ease;
 }
 .dm-notification.visible {
-  transform: translateY(0);
+  transform: translateX(0);
   opacity: 1;
+  animation: notifPop 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes notifPop {
+  0%   { transform: translateX(calc(100% + 20px)); }
+  70%  { transform: translateX(-6px); }
+  85%  { transform: translateX(3px); }
+  100% { transform: translateX(0); }
 }
 .dm-notif-avatar {
   width: 40px;

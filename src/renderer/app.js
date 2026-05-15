@@ -1022,11 +1022,23 @@ function showDMMenu(e, user) {
       },
     },
     {
-      label: 'Eliminar conversación',
+      label: 'Eliminar contacto',
       danger: true,
       action: async () => {
-        if (!confirm(`¿Eliminar toda la conversación con ${user.name}? Esta acción no se puede deshacer.`)) return;
-        await nc.deleteDMConversation(user.uuid);
+        const isOnline = user.is_online;
+        if (isOnline) {
+          // Online: can only delete messages, not the contact
+          if (!confirm(`${user.name} está conectado y no puede ser eliminado.\n\n¿Eliminar solo la conversación? Esta acción no se puede deshacer.`)) return;
+          await nc.deleteDMConversation(user.uuid);
+        } else {
+          // Offline: full deletion — contact + conversation
+          if (!confirm(`¿Eliminar completamente a ${user.name}?\n\nSe eliminará el contacto y toda la conversación. Si el usuario vuelve a conectarse a la red aparecerá de nuevo.\n\nEsta acción no se puede deshacer.`)) return;
+          const result = await nc.deleteUser(user.uuid);
+          if (!result?.ok && result?.reason === 'online') {
+            alert(`${user.name} se conectó justo ahora. Solo se eliminará la conversación.`);
+            await nc.deleteDMConversation(user.uuid);
+          }
+        }
         if (currentChat?.type === 'dm' && currentChat.id === user.uuid) {
           currentChat = null;
           $('chat-view').classList.add('hidden');
@@ -1679,7 +1691,7 @@ function subscribeIPCEvents() {
       nc.flashWindow();
 
       if (msg.channel_id) {
-        showToast(`Nuevo mensaje en #${msg.channel_name || 'canal'}`);
+        showChannelNotification(msg);
       } else {
         showDMNotification(msg);
       }
@@ -2098,52 +2110,92 @@ function showStatusDropdown(anchor) {
   setTimeout(() => document.addEventListener('click', () => dropdown.remove(), { once: true }), 0);
 }
 
-// ── DM notification popup ─────────────────────────────────────────────────────
-function showDMNotification(msg) {
-  document.querySelector('.dm-notification')?.remove();
+// ── Notification popup (DM + channel) ─────────────────────────────────────────
+
+const MAX_NOTIF_CARDS = 3;
+
+function _showNotifCard({ accentColor, iconHtml, title, body, openLabel, onOpen }) {
+  // Limit stacked cards to MAX_NOTIF_CARDS; remove oldest if exceeded
+  const existing = Array.from(document.querySelectorAll('.dm-notification'));
+  if (existing.length >= MAX_NOTIF_CARDS) existing[0].remove();
 
   const card = document.createElement('div');
   card.className = 'dm-notification';
+  card.style.setProperty('--notif-accent', accentColor);
 
+  card.innerHTML = `
+    <div class="dm-notif-avatar" style="background:${accentColor}">${iconHtml}</div>
+    <div class="dm-notif-body">
+      <span class="dm-notif-name">${title}</span>
+      <span class="dm-notif-text">${body}</span>
+    </div>
+    <div class="dm-notif-actions">
+      <button class="btn btn-primary dm-notif-open" style="font-size:11px;padding:5px 10px;white-space:nowrap">${openLabel}</button>
+      <button class="icon-btn dm-notif-close">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>`;
+
+  // Stack vertically: position each new card below the ones already showing
+  const visibleCards = document.querySelectorAll('.dm-notification');
+  const offset = Array.from(visibleCards).reduce((sum, c) => sum + c.offsetHeight + 8, 14);
+  card.style.top = `${offset}px`;
+
+  document.body.appendChild(card);
+  requestAnimationFrame(() => card.classList.add('visible'));
+
+  const dismiss = () => {
+    clearTimeout(timer);
+    card.classList.remove('visible');
+    setTimeout(() => { card.remove(); _repositionNotifCards(); }, 220);
+  };
+  const timer = setTimeout(dismiss, 7000);
+  card.addEventListener('mouseenter', () => clearTimeout(timer));
+  card.addEventListener('mouseleave', () => {
+    const remaining = setTimeout(dismiss, 3000);
+    card.addEventListener('mouseenter', () => clearTimeout(remaining), { once: true });
+  });
+
+  card.querySelector('.dm-notif-open').onclick = () => { dismiss(); onOpen(); };
+  card.querySelector('.dm-notif-close').onclick = dismiss;
+}
+
+function _repositionNotifCards() {
+  let offset = 14;
+  document.querySelectorAll('.dm-notification').forEach(c => {
+    c.style.top = `${offset}px`;
+    offset += c.offsetHeight + 8;
+  });
+}
+
+function showDMNotification(msg) {
   const color = msg.color || '#4A9E8F';
   const initial = (msg.sender_name || '?').charAt(0).toUpperCase();
   const avatarSvg =
     msg.avatar && msg.avatar.startsWith('nc-avatar:')
       ? AVATAR_SVGS[msg.avatar.slice(10)] || initial
       : initial;
-  const preview = escHtml((msg.content || '').slice(0, 90));
+  const iconHtml = typeof avatarSvg === 'string' && avatarSvg.startsWith('<') ? avatarSvg : initial;
 
-  card.innerHTML = `
-    <div class="dm-notif-avatar" style="background:${color}">${typeof avatarSvg === 'string' && avatarSvg.startsWith('<') ? avatarSvg : initial}</div>
-    <div class="dm-notif-body">
-      <span class="dm-notif-name">${escHtml(msg.sender_name || 'Mensaje nuevo')}</span>
-      <span class="dm-notif-text">${preview}</span>
-    </div>
-    <div class="dm-notif-actions">
-      <button class="btn btn-primary dm-notif-open" style="font-size:11px;padding:5px 10px;white-space:nowrap">Abrir</button>
-      <button class="icon-btn dm-notif-close">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-      </button>
-    </div>`;
+  _showNotifCard({
+    accentColor: color,
+    iconHtml,
+    title: escHtml(msg.sender_name || 'Mensaje nuevo'),
+    body: escHtml((msg.content || '').slice(0, 90)),
+    openLabel: 'Abrir',
+    onOpen: () => openChat({ type: 'dm', id: msg.from_uuid, name: msg.sender_name || 'Mensaje directo' }),
+  });
+}
 
-  document.body.appendChild(card);
-  requestAnimationFrame(() => card.classList.add('visible'));
-
-  const timer = setTimeout(
-    () => card.classList.remove('visible') || setTimeout(() => card.remove(), 200),
-    6000
-  );
-  card.addEventListener('mouseenter', () => clearTimeout(timer));
-
-  card.querySelector('.dm-notif-open').onclick = () => {
-    card.remove();
-    clearTimeout(timer);
-    openChat({ type: 'dm', id: msg.from_uuid, name: msg.sender_name || 'Mensaje directo' });
-  };
-  card.querySelector('.dm-notif-close').onclick = () => {
-    clearTimeout(timer);
-    card.remove();
-  };
+function showChannelNotification(msg) {
+  _showNotifCard({
+    accentColor: '#4A9E8F',
+    iconHtml: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M4 9h16M4 15h16"/><circle cx="9" cy="9" r="1" fill="white"/><circle cx="9" cy="15" r="1" fill="white"/></svg>',
+    title: `${escHtml(msg.sender_name || 'Alguien')} en #${escHtml(msg.channel_name || 'canal')}`,
+    body: escHtml((msg.content || '').slice(0, 90)),
+    openLabel: 'Ver',
+    onOpen: () => openChat({ type: 'channel', id: msg.channel_id, name: msg.channel_name || 'canal' }),
+  });
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────

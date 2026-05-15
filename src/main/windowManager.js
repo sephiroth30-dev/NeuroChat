@@ -1,6 +1,6 @@
 'use strict';
 
-const { BrowserWindow, app, nativeTheme, dialog } = require('electron');
+const { BrowserWindow, app, nativeTheme } = require('electron');
 const path = require('path');
 
 let mainWindow = null;
@@ -35,25 +35,12 @@ function createMainWindow() {
     mainWindow.show();
   });
 
-  // X button → ask user before quitting (closing disables notifications)
+  // X button → always minimize to tray (never close the app directly)
+  // The only way to quit is via "Salir" in the tray menu
   mainWindow.on('close', e => {
-    if (isQuitting) return; // already confirmed (e.g. from tray menu)
+    if (isQuitting) return;
     e.preventDefault();
-    const choice = dialog.showMessageBoxSync(mainWindow, {
-      type: 'question',
-      title: 'Cerrar NeuroChat',
-      message: '¿Cerrar NeuroChat?',
-      detail: 'Si cierras la aplicación dejarás de recibir notificaciones de mensajes.',
-      buttons: ['Cerrar y salir', 'Minimizar a la bandeja'],
-      defaultId: 1,
-      cancelId: 1,
-    });
-    if (choice === 0) {
-      isQuitting = true;
-      app.quit();
-    } else {
-      mainWindow.hide();
-    }
+    mainWindow.hide();
   });
 
   mainWindow.on('closed', () => {

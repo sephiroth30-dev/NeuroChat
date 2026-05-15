@@ -11,18 +11,17 @@ function sendTo(peer, payload) {
   if (!peer?.ip) return;
 
   const { uuid, ip, wsPort = 45679 } = peer;
-  const raw = JSON.stringify(payload);
 
   const existing = pool.get(uuid);
 
   if (existing) {
     if (existing.readyState === WebSocket.OPEN) {
-      existing.send(raw);
+      existing.send(JSON.stringify(payload));
       return;
     }
     if (existing.readyState === WebSocket.CONNECTING) {
       existing._queue = existing._queue || [];
-      existing._queue.push(raw);
+      existing._queue.push(payload);
       return;
     }
     // CLOSING or CLOSED — fall through to reconnect
@@ -30,23 +29,35 @@ function sendTo(peer, payload) {
   }
 
   const ws = new WebSocket(`ws://${ip}:${wsPort}`, { handshakeTimeout: 5000 });
-  ws._queue = [raw];
+  ws._queue = [payload];
   pool.set(uuid, ws);
 
   ws.on('open', () => {
     const q = ws._queue || [];
     ws._queue = null;
-    q.forEach(m => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(m);
+    q.forEach(p => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(p));
     });
   });
 
   ws.on('error', err => {
     console.warn(`[wsClient] Error → ${uuid.slice(0, 8)}@${ip}: ${err.message}`);
+    // Re-queue undelivered messages so they reach the recipient when they reconnect
+    if (ws._queue?.length > 0) {
+      const store = require('./store');
+      ws._queue.forEach(p => store.queueMessage(uuid, p));
+      ws._queue = null;
+    }
     pool.delete(uuid);
   });
 
   ws.on('close', () => {
+    // Re-queue any messages that were never sent (error handler may have already cleared _queue)
+    if (ws._queue?.length > 0) {
+      const store = require('./store');
+      ws._queue.forEach(p => store.queueMessage(uuid, p));
+      ws._queue = null;
+    }
     pool.delete(uuid);
   });
 }

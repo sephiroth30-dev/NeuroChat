@@ -562,6 +562,12 @@ function setHiddenDM(peerUuid, hidden) {
   setSetting('hidden_dms', next);
 }
 
+function deleteUser(peerUuid) {
+  db.prepare('DELETE FROM users WHERE uuid = ?').run(peerUuid);
+  // Remove from hidden_dms list if present
+  setHiddenDM(peerUuid, false);
+}
+
 // ── Misc ──────────────────────────────────────────────────────────────────────
 
 function close() {
@@ -605,6 +611,7 @@ module.exports = {
   getAllSettings,
   searchMessages,
   deleteDMMessages,
+  deleteUser,
   getHiddenDMs,
   setHiddenDM,
   getLastDMTimestamps,

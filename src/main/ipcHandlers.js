@@ -394,12 +394,11 @@ function register() {
 
   ipcMain.handle('app:flash', () => {
     const win = windowManager.getMainWindow();
-    if (win && !win.isDestroyed() && !win.isFocused()) {
-      // Windows: flash taskbar button until focused
+    if (win && !win.isDestroyed()) {
+      // Flash taskbar regardless of focus — new message must be visible even when app is open
       win.flashFrame(true);
       win.once('focus', () => win.flashFrame(false));
     }
-    // macOS: bounce dock + mark tray as unread
     tray.notifyUnread(true);
     return { ok: true };
   });
@@ -448,6 +447,16 @@ function register() {
   ipcMain.handle('dm:delete', (_e, peerUuid) => {
     db.deleteDMMessages(peerUuid);
     db.setHiddenDM(peerUuid, true);
+    return { ok: true };
+  });
+
+  // Deletes messages + removes user from DB (only valid for offline users)
+  ipcMain.handle('user:delete', (_e, peerUuid) => {
+    const isOnline = store.getOnlineUsers().some(u => u.uuid === peerUuid && u.isOnline !== false);
+    if (isOnline) return { ok: false, reason: 'online' };
+    store.drainQueue(peerUuid); // discard any pending outbound messages
+    db.deleteDMMessages(peerUuid);
+    db.deleteUser(peerUuid);
     return { ok: true };
   });
 
