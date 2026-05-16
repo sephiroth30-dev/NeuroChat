@@ -8,10 +8,14 @@ autoUpdater.autoInstallOnAppQuit = true;
 
 let _downloadedFilePath = null;
 let _installTimer = null;
+let _shuttingDown = false; // guard: skip notifications during app quit
+let _periodicTimer = null;
+
 const FORCED_INSTALL_DELAY_MS = 10 * 60 * 1000;
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 function notifyRenderer(event, data) {
+  if (_shuttingDown) return;
   BrowserWindow.getAllWindows().forEach(w => {
     if (!w.isDestroyed()) w.webContents.send(event, data);
   });
@@ -78,20 +82,25 @@ function init() {
   });
 
   autoUpdater.on('error', err => {
+    if (_shuttingDown) return; // expected during quit — ignore
     console.error('[Updater]', err.message);
     notifyRenderer('update:status', { state: 'error', message: err.message });
   });
 }
 
 function checkForUpdates() {
+  if (_shuttingDown) return;
   autoUpdater.checkForUpdates().catch(err => {
+    if (_shuttingDown) return;
     console.error('[Updater] checkForUpdates:', err.message);
     notifyRenderer('update:status', { state: 'error', message: err.message });
   });
 }
 
 function downloadUpdate() {
+  if (_shuttingDown) return;
   autoUpdater.downloadUpdate().catch(err => {
+    if (_shuttingDown) return;
     console.error('[Updater] downloadUpdate:', err.message);
     notifyRenderer('update:status', { state: 'error', message: err.message });
   });
@@ -107,49 +116,33 @@ function scheduleForcedInstall() {
 }
 
 function startPeriodicChecks() {
-  const timer = setInterval(() => checkForUpdates(), UPDATE_CHECK_INTERVAL_MS);
-  timer.unref?.();
+  _periodicTimer = setInterval(() => checkForUpdates(), UPDATE_CHECK_INTERVAL_MS);
+  _periodicTimer.unref?.();
+}
+
+function setShuttingDown() {
+  _shuttingDown = true;
+  // Cancel pending timers so they don't fire during/after quit
+  if (_installTimer) { clearTimeout(_installTimer); _installTimer = null; }
+  if (_periodicTimer) { clearInterval(_periodicTimer); _periodicTimer = null; }
 }
 
 function installUpdate() {
-  if (process.platform === 'darwin') {
-    if (_downloadedFilePath) {
-      const { exec } = require('child_process');
-      const path = require('path');
-      const os = require('os');
+  _shuttingDown = true; // no more notifications from here on
+  if (_installTimer) { clearTimeout(_installTimer); _installTimer = null; }
 
-      // Extract ZIP to temp folder, then open it + Applications side by side
-      const extractDir = path.join(os.tmpdir(), 'NeuroChat-update');
-      exec(`rm -rf "${extractDir}" && mkdir -p "${extractDir}" && unzip -o "${_downloadedFilePath}" -d "${extractDir}"`, (err) => {
-        if (err) {
-          // Fallback: just reveal the ZIP
-          shell.showItemInFolder(_downloadedFilePath);
-          setTimeout(() => app.quit(), 800);
-          return;
-        }
-        // Strip quarantine from extracted app
-        exec(`xattr -cr "${extractDir}"`, () => {
-          // Open the extracted folder AND Applications so user can drag
-          exec(`open "${extractDir}" && open /Applications`);
-          setTimeout(() => app.quit(), 1000);
-        });
-      });
-    } else {
-      notifyRenderer('update:status', {
-        state: 'error',
-        message: 'No se encontró el archivo descargado. Instala manualmente desde GitHub.',
-      });
-    }
-    return;
-  }
-
-  // Windows: NSIS handles kill via customInit macro, run silently
+  // electron-updater handles both Windows (NSIS silent install + restart)
+  // and macOS (Squirrel.Mac replace-in-place + relaunch) with quitAndInstall.
   try {
     autoUpdater.quitAndInstall(true, true);
   } catch (err) {
     console.error('[Updater] quitAndInstall failed:', err.message);
-    notifyRenderer('update:status', { state: 'error', message: err.message });
+    // Fallback: show the downloaded file so the user can install manually
+    if (_downloadedFilePath) {
+      shell.showItemInFolder(_downloadedFilePath);
+    }
+    setTimeout(() => app.quit(), 800);
   }
 }
 
-module.exports = { init, checkForUpdates, downloadUpdate, installUpdate, startPeriodicChecks };
+module.exports = { init, checkForUpdates, downloadUpdate, installUpdate, startPeriodicChecks, setShuttingDown };

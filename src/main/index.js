@@ -88,11 +88,14 @@ app.on('second-instance', () => {
 });
 
 app.on('window-all-closed', () => {
-  // Now that X = quit, let the app close on all platforms
-  app.quit();
+  // On macOS the convention is to keep the process alive until cmd+Q.
+  // On Windows/Linux quit when all windows are closed (tray "Salir" path).
+  if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
+  // Tell updater to stop all timers and suppress error notifications
+  if (updater) updater.setShuttingDown();
   if (discovery) discovery.stop();
   if (wsServer) wsServer.stop();
   if (fileTransfer) fileTransfer.stop();

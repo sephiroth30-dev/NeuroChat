@@ -5,6 +5,16 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.1.10] — 2026-05-16 — Corrección de errores al cerrar y auto-instalación de actualizaciones
+
+### Corregido
+- **Error al cerrar la app** (`updater.js`, `index.js`): el auto-updater tenía revisiones periódicas y descargas en vuelo que al cancelarse por el cierre de la app disparaban `error` → `notifyRenderer` intentaba mandar a ventanas ya destruidas, generando errores en consola visibles para el usuario. Se agrega bandera `_shuttingDown` que se activa en `before-quit` y suprime todos los eventos y notificaciones del updater durante el apagado.
+- **Actualización no se instalaba en macOS** (`updater.js`): el flujo manual de extracción ZIP + abrir Finder para drag-and-drop era confuso y los usuarios no sabían qué hacer. Se reemplaza por `autoUpdater.quitAndInstall(true, true)` que `electron-updater` maneja vía Squirrel.Mac para instalación automática en ambas plataformas. Si falla (ej. sin firma de código), cae a `shell.showItemInFolder` como fallback.
+- **`window-all-closed` en macOS** (`index.js`): se corrige para respetar la convención de macOS — el proceso no cierra al cerrar todas las ventanas (permite cmd+Q y tray "Salir" como únicas salidas). En Windows/Linux sí cierra como antes.
+- **Timers no se cancelaban al salir** (`updater.js`): el timer de revisión periódica (`setInterval`) y el timer de instalación forzada (`setTimeout`) no se limpiaban en `before-quit`, pudiendo dispararse después del cierre. Ahora `setShuttingDown()` los cancela explícitamente.
+
+---
+
 ## [2.1.9] — 2026-05-15 — Mensajes encolados, tray obligatorio, eliminación de contactos y notificaciones visibles
 
 ### Corregido
