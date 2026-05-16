@@ -5,6 +5,18 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.1.12] — 2026-05-16 — Taskbar Windows sin abrir ventana + instalación macOS corregida
+
+### Corregido
+- **Ventana se abría encima al llegar un mensaje en Windows** (`windowManager.js`, `tray.js`): `showInactive()` no respetaba el estado minimizado y mostraba la ventana a tamaño completo sobre lo que el usuario estaba haciendo. Solución: se reemplaza completamente el enfoque por `setSkipTaskbar`:
+  - X ahora hace `minimize()` + `setSkipTaskbar(true)` — la ventana queda minimizada pero invisible en el taskbar (solo el tray icon).
+  - Al llegar un mensaje, `setSkipTaskbar(false)` hace reaparecer el botón minimizado en el taskbar — **sin mostrar ninguna ventana** — y `flashFrame(true)` lo hace parpadear naranja de forma persistente.
+  - Al abrir la app (tray o botón taskbar), `setSkipTaskbar(false)` + `restore()` muestra la ventana normalmente.
+  - Al limpiar los unreads con la ventana aún minimizada, `setSkipTaskbar(true)` la vuelve a ocultar al tray.
+- **Actualización macOS no se instalaba** (`updater.js`): `quitAndInstall()` de Squirrel.Mac falla silenciosamente en apps sin firma de código. Nuevo flujo: extrae el ZIP descargado a `~/Downloads/NeuroChat-Update/`, ejecuta `xattr -cr` para quitar la cuarentena de macOS, y abre el directorio junto con `/Applications` para que el usuario arrastre el ícono y complete la instalación con un solo gesto. Si la extracción falla, muestra el ZIP en Finder como fallback.
+
+---
+
 ## [2.1.11] — 2026-05-16 — Notificaciones persistentes en Windows: icono naranja parpadeante en barra de tareas
 
 ### Corregido

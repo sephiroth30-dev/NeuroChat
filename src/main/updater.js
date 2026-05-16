@@ -128,21 +128,53 @@ function setShuttingDown() {
 }
 
 function installUpdate() {
-  _shuttingDown = true; // no more notifications from here on
+  _shuttingDown = true;
   if (_installTimer) { clearTimeout(_installTimer); _installTimer = null; }
 
-  // electron-updater handles both Windows (NSIS silent install + restart)
-  // and macOS (Squirrel.Mac replace-in-place + relaunch) with quitAndInstall.
-  try {
-    autoUpdater.quitAndInstall(true, true);
-  } catch (err) {
-    console.error('[Updater] quitAndInstall failed:', err.message);
-    // Fallback: show the downloaded file so the user can install manually
-    if (_downloadedFilePath) {
-      shell.showItemInFolder(_downloadedFilePath);
+  // Windows: NSIS handles silent install + automatic restart
+  if (process.platform !== 'darwin') {
+    try {
+      autoUpdater.quitAndInstall(true, true);
+    } catch (err) {
+      console.error('[Updater] quitAndInstall failed:', err.message);
+      if (_downloadedFilePath) shell.showItemInFolder(_downloadedFilePath);
+      setTimeout(() => app.quit(), 800);
     }
-    setTimeout(() => app.quit(), 800);
+    return;
   }
+
+  // macOS: Squirrel.Mac doesn't work reliably on unsigned apps.
+  // Extract the downloaded ZIP to ~/Downloads, strip quarantine so macOS
+  // doesn't block it, then open the folder + /Applications side by side
+  // so the user can drag to replace with a single action.
+  if (!_downloadedFilePath) {
+    notifyRenderer('update:status', { state: 'error', message: 'Archivo de actualización no encontrado. Descarga la nueva versión manualmente.' });
+    _shuttingDown = false;
+    return;
+  }
+
+  const { exec } = require('child_process');
+  const path = require('path');
+  const os = require('os');
+  const extractDir = path.join(os.homedir(), 'Downloads', 'NeuroChat-Update');
+
+  exec(
+    `rm -rf "${extractDir}" && mkdir -p "${extractDir}" && unzip -o "${_downloadedFilePath}" -d "${extractDir}" && xattr -cr "${extractDir}"`,
+    err => {
+      if (err) {
+        console.error('[Updater] extract failed:', err.message);
+        // Fallback: open the ZIP in Finder
+        shell.showItemInFolder(_downloadedFilePath);
+        setTimeout(() => app.quit(), 800);
+        return;
+      }
+
+      // Open the extracted folder and /Applications side-by-side for drag-and-drop
+      exec(`open "${extractDir}" && open /Applications`, () => {
+        setTimeout(() => app.quit(), 800);
+      });
+    }
+  );
 }
 
 module.exports = { init, checkForUpdates, downloadUpdate, installUpdate, startPeriodicChecks, setShuttingDown };

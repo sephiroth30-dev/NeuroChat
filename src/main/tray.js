@@ -50,6 +50,7 @@ function sendStatus(status) {
 
 function showWindow() {
   if (_mainWindow) {
+    if (process.platform === 'win32') _mainWindow.setSkipTaskbar(false);
     if (_mainWindow.isMinimized()) _mainWindow.restore();
     if (!_mainWindow.isVisible()) _mainWindow.show();
     _mainWindow.focus();
@@ -122,20 +123,18 @@ function updateTaskbarUnread(hasUnread, count) {
 
   if (process.platform === 'win32') {
     if (hasUnread) {
-      // If the window was hidden to tray, bring it back to the taskbar as a
-      // minimized button (not full window) so flashFrame has somewhere to flash.
-      // windowManager minimizes before hiding, so showInactive restores it minimized.
-      if (!_mainWindow.isVisible()) {
-        _mainWindow.showInactive();
-      }
+      // Bring the minimized window back to the taskbar as a BUTTON (not full window).
+      // setSkipTaskbar(false) on a minimized window reappears it as a minimized button
+      // — no full window shown, no focus stolen — then flashFrame makes it flash orange.
+      _mainWindow.setSkipTaskbar(false);
       _mainWindow.setOverlayIcon(loadIcon('tray-notify.ico'), `${count || 1} mensaje(s) sin leer`);
       _mainWindow.flashFrame(true);
     } else {
       _mainWindow.setOverlayIcon(null, '');
       _mainWindow.flashFrame(false);
-      // Re-hide the window if the user hasn't opened it (still minimized)
-      if (_mainWindow.isVisible() && _mainWindow.isMinimized()) {
-        _mainWindow.hide();
+      // If window is still minimized (user hasn't opened it), hide it back to tray
+      if (_mainWindow.isMinimized() && !_mainWindow.isFocused()) {
+        _mainWindow.setSkipTaskbar(true);
       }
     }
     return;

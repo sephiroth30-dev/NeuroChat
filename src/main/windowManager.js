@@ -36,16 +36,18 @@ function createMainWindow() {
   });
 
   // X button → minimize to tray (never close the app directly)
-  // On Windows: minimize first so the window remembers its minimized state.
-  // When a new message arrives, showInactive() restores it to the taskbar
-  // as a minimized button (not full window), enabling flashFrame to work.
+  // Windows strategy: minimize the window (preserves state) then remove from
+  // taskbar via setSkipTaskbar(true).  This lets tray.js call setSkipTaskbar(false)
+  // later to bring back a MINIMIZED BUTTON — not a full window — so flashFrame works.
   mainWindow.on('close', e => {
     if (isQuitting) return;
     e.preventDefault();
-    if (process.platform === 'win32' && !mainWindow.isMinimized()) {
-      mainWindow.minimize();
+    if (process.platform === 'win32') {
+      if (!mainWindow.isMinimized()) mainWindow.minimize();
+      mainWindow.setSkipTaskbar(true);
+    } else {
+      mainWindow.hide();
     }
-    mainWindow.hide();
   });
 
   mainWindow.on('closed', () => {
@@ -78,6 +80,8 @@ function showMainWindow() {
     createMainWindow();
     return;
   }
+  // On Windows the window may be minimized + hidden from taskbar via setSkipTaskbar
+  if (process.platform === 'win32') mainWindow.setSkipTaskbar(false);
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();

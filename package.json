@@ -1,6 +1,6 @@
 {
   "name": "neurochat",
-  "version": "2.1.11",
+  "version": "2.1.12",
   "description": "Mensajería interna LAN para Neurofit",
   "main": "src/main/index.js",
   "author": "Neurofit",
