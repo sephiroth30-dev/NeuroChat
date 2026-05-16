@@ -122,11 +122,21 @@ function updateTaskbarUnread(hasUnread, count) {
 
   if (process.platform === 'win32') {
     if (hasUnread) {
+      // If the window was hidden to tray, bring it back to the taskbar as a
+      // minimized button (not full window) so flashFrame has somewhere to flash.
+      // windowManager minimizes before hiding, so showInactive restores it minimized.
+      if (!_mainWindow.isVisible()) {
+        _mainWindow.showInactive();
+      }
       _mainWindow.setOverlayIcon(loadIcon('tray-notify.ico'), `${count || 1} mensaje(s) sin leer`);
       _mainWindow.flashFrame(true);
     } else {
       _mainWindow.setOverlayIcon(null, '');
       _mainWindow.flashFrame(false);
+      // Re-hide the window if the user hasn't opened it (still minimized)
+      if (_mainWindow.isVisible() && _mainWindow.isMinimized()) {
+        _mainWindow.hide();
+      }
     }
     return;
   }

@@ -5,6 +5,19 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.1.11] — 2026-05-16 — Notificaciones persistentes en Windows: icono naranja parpadeante en barra de tareas
+
+### Corregido
+- **Icono no parpadeaba en la barra de tareas de Windows cuando la ventana estaba oculta** (`windowManager.js`, `tray.js`): al usar `win.hide()` la ventana desaparecía completamente del taskbar, haciendo que `flashFrame` no tuviera dónde actuar. La notificación llegaba, sonaba una vez y desaparecía sin dejar ningún indicador visual persistente.
+
+  **Solución implementada:**
+  - `windowManager.js`: al presionar X, el proceso ahora es `minimize()` → `hide()`. Esto guarda el estado de la ventana como "minimizada" antes de ocultarla del taskbar.
+  - `tray.js` `updateTaskbarUnread`: cuando llega un mensaje nuevo en Windows y la ventana está oculta, se llama `showInactive()` para traerla de vuelta al taskbar **en estado minimizado** (sin que aparezca la ventana completa, sin robar el foco). Luego `flashFrame(true)` hace parpadear el botón en naranja de forma persistente, igual que Discord o Teams.
+  - Cuando el usuario abre la app (desde el taskbar o el tray), el foco dispara `clearUnread()` → `flashFrame(false)` → el parpadeo se detiene.
+  - Si el usuario no tiene mensajes pendientes y la ventana sigue minimizada en el taskbar, se oculta automáticamente de vuelta al tray.
+
+---
+
 ## [2.1.10] — 2026-05-16 — Corrección de errores al cerrar y auto-instalación de actualizaciones
 
 ### Corregido

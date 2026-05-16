@@ -35,11 +35,16 @@ function createMainWindow() {
     mainWindow.show();
   });
 
-  // X button → always minimize to tray (never close the app directly)
-  // The only way to quit is via "Salir" in the tray menu
+  // X button → minimize to tray (never close the app directly)
+  // On Windows: minimize first so the window remembers its minimized state.
+  // When a new message arrives, showInactive() restores it to the taskbar
+  // as a minimized button (not full window), enabling flashFrame to work.
   mainWindow.on('close', e => {
     if (isQuitting) return;
     e.preventDefault();
+    if (process.platform === 'win32' && !mainWindow.isMinimized()) {
+      mainWindow.minimize();
+    }
     mainWindow.hide();
   });
 
