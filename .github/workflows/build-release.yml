@@ -96,14 +96,12 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Compilar módulos nativos para Electron (macOS — better-sqlite3)
-        # robotjs está en optionalDependencies; si falla en macOS no es fatal
-        # (Mac solo actúa como viewer, nunca como host de input)
-        run: npx @electron/rebuild -f -w better-sqlite3
-
       - name: Build macOS universal DMG + ZIP + publicar en release draft
-        # electron-builder reconstruye internamente para x64 y arm64 al
-        # detectar arch: universal en electron-builder.yml
+        # arch:universal en electron-builder.yml hace que electron-builder
+        # reconstruya los módulos nativos (better-sqlite3) para x64 Y arm64
+        # internamente y los combine con lipo — no hay que pre-rebuildar.
+        # Pre-rebuildar solo el host (arm64) rompía Intel Macs al cargar
+        # el slice x64 con el módulo arm64.
         run: npx electron-builder --mac --publish onTagOrDraft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

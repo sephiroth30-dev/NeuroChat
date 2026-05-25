@@ -50,6 +50,24 @@ app.whenReady().then(async () => {
   fileTransfer.start();
   discovery.start();
 
+  // Windows: ensure firewall rules are in place (prompts UAC once if missing)
+  if (process.platform === 'win32') {
+    setTimeout(async () => {
+      try {
+        const diag = require('./diagnostics');
+        const ok = await diag.checkFirewallRules();
+        if (!ok) {
+          console.log('[Firewall] Rules missing — requesting elevation to add them');
+          await diag.addFirewallRules();
+          // Re-announce so peers can now reach us
+          discovery.updateAnnounce(database.getProfile() || {});
+        }
+      } catch (err) {
+        console.warn('[Firewall] Auto-setup failed:', err.message);
+      }
+    }, 3000);
+  }
+
   // Init tray icon
   tray.init(win);
 
