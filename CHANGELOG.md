@@ -5,6 +5,26 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.3] — 2026-05-25 — Actualizaciones 100 % silenciosas + reducción de tamaño
+
+### Actualizaciones silenciosas
+- **Descarga completamente invisible**: ya no se muestra ninguna notificación ni indicador mientras la actualización se descarga en segundo plano.
+- **Una sola notificación al final**: cuando la descarga termina, aparece una notificación informativa discreta ("NeuroChat vX.X.X se instalará en 10 minutos"). No requiere ninguna acción del usuario.
+- **Instalación automática a los 10 minutos** sin tocar nada. En Windows se reinstala con `/S` (modo silencioso del instalador NSIS) y relanza la app.
+- El panel de Ajustes → Actualizaciones sigue mostrando el progreso si el usuario lo abre voluntariamente.
+
+### Instalador más pequeño y sin wizard (Windows)
+- **`oneClick: true`**: el instalador NSIS ya no muestra ningún asistente de instalación (ni inicial ni en actualizaciones). Se instala de forma transparente en la carpeta del usuario sin pedir contraseña ni confirmación.
+- **`compression: maximum`**: compresión LZMA en el asar y en el instalador. El ejecutable final es ~25-35 % más pequeño.
+- **Assets del bundle reducidos**: se eliminan del paquete los archivos que solo son necesarios en tiempo de compilación (iconset de PNG, SVGs). Solo se incluyen los iconos de bandeja de sistema que se usan en tiempo de ejecución.
+
+### Modificado
+- `src/main/updater.js` — lógica de actualización simplificada y silenciosa.
+- `electron-builder.yml` — `compression: maximum`, `oneClick: true`, `files` con solo los assets de runtime.
+- `package.json` — bump v2.2.3.
+
+---
+
 ## [2.2.2] — 2026-05-25 — Compatibilidad universal macOS (Intel + Apple Silicon)
 
 ### Corregido

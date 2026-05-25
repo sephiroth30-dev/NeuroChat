@@ -4,15 +4,19 @@ copyright: © 2025 Neurofit
 
 directories:
   output: dist
-  # Keep buildResources separate from output so electron-builder can find
-  # installer-script.nsh and other build resources without conflicts.
   buildResources: build-resources
 
-# Exclude dev-only files from the app bundle
+compression: maximum
+
+# Only include source code and the runtime assets (tray icons).
+# Build-time assets (iconset PNGs, SVGs) are excluded — they're embedded
+# by electron-builder into the executable/bundle and not needed at runtime.
 files:
   - src/**/*
-  - assets/**/*
-  - "!assets/fonts/.gitkeep"
+  - assets/tray-icon.ico
+  - assets/tray-notify.ico
+  - assets/tray-template.png
+  - assets/tray-template@2x.png
 
 # Fonts go into the app's extra-resources folder so the renderer can load them
 extraResources:
@@ -38,12 +42,10 @@ win:
   requestedExecutionLevel: asInvoker
 
 nsis:
-  oneClick: false
+  oneClick: true
   perMachine: false
-  allowToChangeInstallationDirectory: true
   installerIcon: assets/icon.ico
   uninstallerIcon: assets/icon.ico
-  installerHeaderIcon: assets/icon.ico
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: NeuroChat

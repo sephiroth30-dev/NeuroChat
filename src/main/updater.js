@@ -1,14 +1,14 @@
 'use strict';
 
 const { autoUpdater } = require('electron-updater');
-const { BrowserWindow, shell, app } = require('electron');
+const { BrowserWindow, app } = require('electron');
 
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.logger = null; // silence electron-updater's own logging
 
-let _downloadedFilePath = null;
 let _installTimer = null;
-let _shuttingDown = false; // guard: skip notifications during app quit
+let _shuttingDown = false;
 let _periodicTimer = null;
 
 const FORCED_INSTALL_DELAY_MS = 10 * 60 * 1000;
@@ -21,31 +21,13 @@ function notifyRenderer(event, data) {
   });
 }
 
-function openSettingsWindow() {
-  const wins = BrowserWindow.getAllWindows();
-  wins.forEach(w => { if (!w.isDestroyed()) { w.show(); w.focus(); } });
-  setTimeout(() => notifyRenderer('notification:navigate', { action: 'settings' }), 250);
-}
-
 function init() {
-  autoUpdater.on('checking-for-update', () => {
-    notifyRenderer('update:status', { state: 'checking' });
-  });
-
+  // Silent: don't notify while downloading
   autoUpdater.on('update-available', info => {
     notifyRenderer('update:status', {
       state: 'downloading',
       version: info.version,
-      releaseDate: info.releaseDate,
       percent: 0,
-    });
-
-    const notifier = require('./notifier');
-    notifier.notify({
-      title: 'Actualización obligatoria',
-      body: `NeuroChat v${info.version} se está descargando automáticamente.`,
-      persistent: true,
-      onClick: openSettingsWindow,
     });
   });
 
@@ -63,26 +45,24 @@ function init() {
   });
 
   autoUpdater.on('update-downloaded', info => {
-    _downloadedFilePath = info.downloadedFile || null;
     notifyRenderer('update:status', {
       state: 'required',
       version: info.version,
       installInMinutes: Math.ceil(FORCED_INSTALL_DELAY_MS / 60000),
     });
 
+    // Single, non-intrusive notification — no click required
     const notifier = require('./notifier');
     notifier.notify({
-      title: 'Actualización lista',
-      body: `NeuroChat v${info.version} se instalará automáticamente. Haz clic para reiniciar ahora.`,
-      persistent: true,
-      onClick: () => installUpdate(),
+      title: `NeuroChat v${info.version} listo`,
+      body: `Se instalará automáticamente en ${Math.ceil(FORCED_INSTALL_DELAY_MS / 60000)} minutos.`,
     });
 
     scheduleForcedInstall();
   });
 
   autoUpdater.on('error', err => {
-    if (_shuttingDown) return; // expected during quit — ignore
+    if (_shuttingDown) return;
     console.error('[Updater]', err.message);
     notifyRenderer('update:status', { state: 'error', message: err.message });
   });
@@ -93,7 +73,6 @@ function checkForUpdates() {
   autoUpdater.checkForUpdates().catch(err => {
     if (_shuttingDown) return;
     console.error('[Updater] checkForUpdates:', err.message);
-    notifyRenderer('update:status', { state: 'error', message: err.message });
   });
 }
 
@@ -102,7 +81,6 @@ function downloadUpdate() {
   autoUpdater.downloadUpdate().catch(err => {
     if (_shuttingDown) return;
     console.error('[Updater] downloadUpdate:', err.message);
-    notifyRenderer('update:status', { state: 'error', message: err.message });
   });
 }
 
@@ -122,7 +100,6 @@ function startPeriodicChecks() {
 
 function setShuttingDown() {
   _shuttingDown = true;
-  // Cancel pending timers so they don't fire during/after quit
   if (_installTimer) { clearTimeout(_installTimer); _installTimer = null; }
   if (_periodicTimer) { clearInterval(_periodicTimer); _periodicTimer = null; }
 }
@@ -131,24 +108,24 @@ function installUpdate() {
   _shuttingDown = true;
   if (_installTimer) { clearTimeout(_installTimer); _installTimer = null; }
 
-  // Windows: NSIS handles silent install + automatic restart
   if (process.platform !== 'darwin') {
+    // Windows: NSIS oneClick silent install + auto-restart
     try {
       autoUpdater.quitAndInstall(true, true);
     } catch (err) {
       console.error('[Updater] quitAndInstall failed:', err.message);
-      if (_downloadedFilePath) shell.showItemInFolder(_downloadedFilePath);
       setTimeout(() => app.quit(), 800);
     }
     return;
   }
 
-  // macOS: Squirrel.Mac doesn't work reliably on unsigned apps.
-  // Extract the downloaded ZIP to ~/Downloads, strip quarantine so macOS
-  // doesn't block it, then open the folder + /Applications side by side
-  // so the user can drag to replace with a single action.
-  if (!_downloadedFilePath) {
-    notifyRenderer('update:status', { state: 'error', message: 'Archivo de actualización no encontrado. Descarga la nueva versión manualmente.' });
+  // macOS: download the ZIP to ~/Downloads, strip quarantine, open for drag-and-drop
+  const downloadedFile = autoUpdater.currentVersion?.downloadedFile;
+  if (!downloadedFile) {
+    notifyRenderer('update:status', {
+      state: 'error',
+      message: 'Archivo no encontrado. Descarga la nueva versión manualmente.',
+    });
     _shuttingDown = false;
     return;
   }
@@ -159,17 +136,13 @@ function installUpdate() {
   const extractDir = path.join(os.homedir(), 'Downloads', 'NeuroChat-Update');
 
   exec(
-    `rm -rf "${extractDir}" && mkdir -p "${extractDir}" && unzip -o "${_downloadedFilePath}" -d "${extractDir}" && xattr -cr "${extractDir}"`,
+    `rm -rf "${extractDir}" && mkdir -p "${extractDir}" && unzip -o "${downloadedFile}" -d "${extractDir}" && xattr -cr "${extractDir}"`,
     err => {
       if (err) {
-        console.error('[Updater] extract failed:', err.message);
-        // Fallback: open the ZIP in Finder
-        shell.showItemInFolder(_downloadedFilePath);
+        require('electron').shell.showItemInFolder(downloadedFile);
         setTimeout(() => app.quit(), 800);
         return;
       }
-
-      // Open the extracted folder and /Applications side-by-side for drag-and-drop
       exec(`open "${extractDir}" && open /Applications`, () => {
         setTimeout(() => app.quit(), 800);
       });
