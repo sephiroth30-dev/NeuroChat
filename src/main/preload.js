@@ -99,6 +99,10 @@ contextBridge.exposeInMainWorld('neurochat', {
       'system:idle',
       'system:active',
       'update:status',
+      'remote:incoming-request',
+      'remote:session-accepted',
+      'remote:session-rejected',
+      'remote:session-ended',
     ];
     if (!allowed.includes(channel)) return;
     const listener = (_e, ...args) => fn(...args);
@@ -110,6 +114,12 @@ contextBridge.exposeInMainWorld('neurochat', {
   once: (channel, fn) => {
     ipcRenderer.once(channel, (_e, ...args) => fn(...args));
   },
+
+  // Remote desktop
+  requestRemote: peerUuid => ipcRenderer.invoke('remote:request', { peerUuid }),
+  acceptRemote: (sessionId, fromUuid) => ipcRenderer.invoke('remote:accept', { sessionId, fromUuid }),
+  rejectRemote: (sessionId, fromUuid) => ipcRenderer.invoke('remote:reject', { sessionId, fromUuid }),
+  endRemote: sessionId => ipcRenderer.invoke('remote:end', { sessionId }),
 
   // Updates
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

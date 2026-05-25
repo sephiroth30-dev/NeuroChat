@@ -5,6 +5,97 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.0] — 2026-05-25 — Soporte remoto P2P nativo (sin herramientas externas)
+
+### Añadido
+
+#### Control remoto integrado — sin VNC, AnyDesk ni herramientas externas
+
+Se incorpora un sistema completo de escritorio remoto propio, construido 100 % sobre tecnologías nativas de Electron y la infraestructura de red ya existente en NeuroChat. No requiere instalar ni configurar ningún software adicional en ninguna máquina.
+
+**Funcionamiento general:**
+1. Al abrir un chat directo (DM) con un compañero, aparece el nuevo botón **"Soporte remoto"** en la barra superior del chat (icono de monitor con tick).
+2. El solicitante envía la solicitud a través del WebSocket ya existente (puerto 45679).
+3. El host (máquina remota) recibe un **modal de aceptación/rechazo** con aviso de seguridad: acepta solo si reconoce al solicitante.
+4. Al aceptar, se establece automáticamente una conexión **WebRTC P2P directa** entre las dos máquinas dentro de la LAN — sin intermediarios, sin servidores de relay.
+5. El solicitante ve la pantalla del host en tiempo real. Puede mover el mouse, hacer clic, hacer scroll y escribir.
+6. Cualquiera de los dos puede terminar la sesión en cualquier momento.
+
+**Arquitectura técnica (`src/main/remoteDesktop.js`):**
+
+| Capa | Tecnología | Rol |
+|------|-----------|-----|
+| Captura de pantalla | `desktopCapturer` + `setDisplayMediaRequestHandler` (API nativa Electron 29) | Captura el escritorio completo del host sin mostrar selector al usuario |
+| Transmisión de video | **WebRTC P2P** (H.264 hardware-accelerated) | Stream de video directo entre las máquinas, con control de congestión automático (REMB/TWCC/GCC) |
+| Eventos de input | **WebRTC DataChannel** (unordered, maxRetransmits=0) | Canal sin latencia de ACK — máxima velocidad para mouse y teclado |
+| Simulación de input | **robotjs** (nativo Windows) | Ejecuta los eventos de mouse/teclado recibidos en el sistema operativo del host |
+| Señalización WebRTC | WebSocket ya existente (puerto 45679) | Nuevos tipos de mensaje: `REMOTE_REQUEST`, `REMOTE_ACCEPT`, `REMOTE_REJECT`, `REMOTE_SDP`, `REMOTE_ICE`, `REMOTE_END` |
+
+**Ventana del host (`src/renderer/remote-host.html/.js`):**
+- Widget flotante pequeño (380×150 px) siempre visible encima de todas las ventanas mientras dura la sesión
+- Muestra: nombre del solicitante, duración de sesión, FPS actual y bitrate de salida
+- Botón "Terminar sesión" accesible en todo momento
+- No interfiere con el flujo de trabajo — no bloquea la pantalla ni requiere interacción adicional
+
+**Ventana del viewer — quien da soporte (`src/renderer/remote-viewer.html/.js`):**
+- Ventana independiente que muestra la pantalla remota a escala completa preservando el aspect ratio
+- **Barra flotante inferior** (auto-ocultable a los 3 segundos de inactividad):
+  - Botón "Terminar"
+  - Selector de **calidad adaptable**:
+
+    | Preset | Bitrate máx | FPS máx | Escala de resolución |
+    |--------|-------------|---------|----------------------|
+    | Auto   | Sin límite  | 30      | 1× (WebRTC decide)   |
+    | HD     | 8 Mb/s      | 30      | 1×                   |
+    | Balanceado | 3 Mb/s  | 20      | 1×                   |
+    | Rendimiento | 1.2 Mb/s | 15   | 1.5×                 |
+    | Baja   | 600 kb/s    | 10      | 2×                   |
+
+  - Botón pantalla completa
+  - Contador de FPS y Mb/s en tiempo real
+- Input capturado:
+  - **Mouse**: movimiento, clic izquierdo/derecho/centro, doble clic, scroll — coordenadas normalizadas 0–1 para independencia de resolución
+  - **Teclado**: todas las teclas incluidas F1–F12, flechas, combinaciones con Ctrl/Alt/Shift/Meta — interceptadas antes de que el OS las consuma localmente
+  - Cursor local oculto (`cursor: none`) — solo se ve el cursor en el host
+
+**Calidad adaptable en tiempo real:**
+- El preset se envía via DataChannel al host como `{ type: 'quality', preset: 'low' }`
+- El host llama a `RTCRtpSender.setParameters()` directamente sobre el encoder de video WebRTC — cambio sin cortar la sesión, efectivo en ~1 segundo
+- En modo **Auto**, el WebRTC controla el bitrate mediante GCC (Google Congestion Control): si la LAN tiene congestión sube calidad, si hay pérdida la baja — comportamiento idéntico a herramientas profesionales
+
+**Seguridad:**
+- El host siempre ve el modal y debe aceptar explícitamente — no hay acceso sin consentimiento
+- La sesión es P2P dentro de la LAN — ningún dato de pantalla o input sale de la red local
+- El host puede terminar la sesión en cualquier momento con un clic
+
+**Archivos nuevos:**
+- `src/main/remoteDesktop.js` — módulo principal: gestión de sesiones, creación de ventanas, simulación de input vía robotjs, enrutamiento de señalización WebRTC
+- `src/renderer/remote-host.html` + `remote-host.js` — ventana del host (overlay flotante, captura de pantalla, RTCPeerConnection offerer, DataChannel receiver)
+- `src/renderer/remote-viewer.html` + `remote-viewer.js` — ventana del viewer (video display, captura y reenvío de input, control de calidad, stats)
+- `src/renderer/remote-host-preload.js` + `remote-viewer-preload.js` — contextBridge para ambas ventanas remotas
+- `src/renderer/styles/remote.css` — estilos del widget host y del toolbar del viewer
+
+**Archivos modificados:**
+- `src/main/index.js` — inicializa `remoteDesktop.init()` en el arranque
+- `src/main/wsServer.js` — `handleIncoming` enruta los 6 nuevos tipos `REMOTE_*` a `remoteDesktop.handleSignaling()`
+- `src/main/preload.js` — expone `requestRemote`, `acceptRemote`, `rejectRemote`, `endRemote` + 4 nuevos eventos IPC al renderer principal
+- `src/renderer/index.html` — botón "Soporte remoto" en el header del chat (visible solo en DMs)
+- `src/renderer/app.js` — lógica del botón, modal de aceptación/rechazo, listeners de eventos remotos
+- `package.json` — dependencia `robotjs ^0.6.0`; script `rebuild` actualizado para incluir robotjs
+- `electron-builder.yml` — `asarUnpack` extendido para incluir `node_modules/robotjs/**/*` (módulo nativo, debe estar fuera del asar)
+
+### Nota para el build
+
+Después de `npm install` en un entorno de desarrollo, compilar robotjs para Electron antes de iniciar:
+```
+npm run rebuild
+```
+El build de producción con `electron-builder` recompila los módulos nativos automáticamente.
+
+---
+
+---
+
 ## [2.1.12] — 2026-05-16 — Taskbar Windows sin abrir ventana + instalación macOS corregida
 
 ### Corregido

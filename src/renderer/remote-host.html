@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data:;"
+    />
+    <title>NeuroChat Remote — Host</title>
+    <link rel="stylesheet" href="styles/remote.css" />
+  </head>
+  <body class="host-body">
+    <div class="host-widget">
+      <div class="host-header">
+        <span class="rec-dot"></span>
+        <span class="host-title">Sesión remota activa</span>
+      </div>
+      <div class="host-peer">Conectado con: <strong id="peer-name">—</strong></div>
+      <div class="host-stats">
+        <span id="host-duration">0:00</span>
+        &nbsp;·&nbsp;
+        <span id="host-fps">— fps</span>
+        &nbsp;·&nbsp;
+        <span id="host-bitrate">—</span>
+      </div>
+      <button id="end-btn" class="end-btn">Terminar sesión</button>
+    </div>
+
+    <script src="remote-host.js"></script>
+  </body>
+</html>

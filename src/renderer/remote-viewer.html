@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data:;"
+    />
+    <title>NeuroChat Remote</title>
+    <link rel="stylesheet" href="styles/remote.css" />
+  </head>
+  <body class="viewer-body">
+
+    <!-- Remote screen video -->
+    <div id="video-wrap" class="video-wrap">
+      <video id="remote-video" class="remote-video" autoplay playsinline></video>
+
+      <!-- Connecting overlay -->
+      <div id="connecting-overlay" class="connecting-overlay">
+        <div class="connecting-spinner"></div>
+        <p>Conectando con <strong id="overlay-peer-name"></strong>…</p>
+      </div>
+    </div>
+
+    <!-- Floating toolbar (auto-hides) -->
+    <div id="toolbar" class="viewer-toolbar">
+      <button id="end-btn" class="tb-btn tb-end" title="Terminar sesión">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <rect x="6" y="6" width="12" height="12" rx="1"/>
+        </svg>
+        Terminar
+      </button>
+
+      <div class="tb-sep"></div>
+
+      <div class="tb-quality-wrap">
+        <span class="tb-label">Calidad:</span>
+        <select id="quality-select" class="tb-select">
+          <option value="auto">Auto</option>
+          <option value="hd">HD (máx)</option>
+          <option value="bal">Balanceado</option>
+          <option value="perf">Rendimiento</option>
+          <option value="low">Baja</option>
+        </select>
+      </div>
+
+      <div class="tb-sep"></div>
+
+      <button id="fs-btn" class="tb-btn" title="Pantalla completa">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
+        </svg>
+      </button>
+
+      <div class="tb-sep"></div>
+
+      <span id="tb-stats" class="tb-stats">—</span>
+    </div>
+
+    <script src="remote-viewer.js"></script>
+  </body>
+</html>

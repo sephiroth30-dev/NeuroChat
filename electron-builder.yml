@@ -19,10 +19,11 @@ extraResources:
   - from: assets/fonts
     to: fonts
 
-# Native modules (better-sqlite3) must NOT be inside the asar archive
+# Native modules must NOT be inside the asar archive
 asar: true
 asarUnpack:
   - node_modules/better-sqlite3/**/*
+  - node_modules/robotjs/**/*
 
 publish:
   provider: github

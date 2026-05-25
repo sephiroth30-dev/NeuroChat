@@ -1,0 +1,387 @@
+'use strict';
+
+const { BrowserWindow, ipcMain, screen, desktopCapturer } = require('electron');
+const path = require('path');
+const crypto = require('crypto');
+
+let db, store, wsClient;
+let _initialized = false;
+
+// Active sessions: sessionId → { role, peerUuid, peerIp, peerName, hostWin, viewerWin, status }
+const sessions = new Map();
+
+function init() {
+  if (_initialized) return;
+  _initialized = true;
+  db = require('./database');
+  store = require('./store');
+  wsClient = require('./wsClient');
+  _registerIPC();
+}
+
+// ── IPC Registration ──────────────────────────────────────────────────────────
+
+function _registerIPC() {
+  // Viewer initiates remote session request
+  ipcMain.handle('remote:request', (_e, { peerUuid }) => {
+    const peer = store.getOnlineUsers().find(u => u.uuid === peerUuid);
+    if (!peer?.ip) return { ok: false, error: 'peer_offline' };
+
+    const profile = db.getProfile();
+    const sessionId = crypto.randomUUID();
+    sessions.set(sessionId, {
+      role: 'viewer',
+      peerUuid,
+      peerIp: peer.ip,
+      peerName: peer.name,
+      status: 'pending',
+    });
+
+    wsClient.sendTo(peer, {
+      type: 'REMOTE_REQUEST',
+      sessionId,
+      fromUuid: profile.uuid,
+      fromName: profile.name,
+      toUuid: peerUuid,
+    });
+
+    return { ok: true, sessionId };
+  });
+
+  // Host accepts incoming remote request
+  ipcMain.handle('remote:accept', (_e, { sessionId, fromUuid }) => {
+    const peer = store.getOnlineUsers().find(u => u.uuid === fromUuid);
+    if (!peer?.ip) return { ok: false, error: 'peer_offline' };
+
+    const profile = db.getProfile();
+    const { width, height } = screen.getPrimaryDisplay().size;
+
+    sessions.set(sessionId, {
+      role: 'host',
+      peerUuid: fromUuid,
+      peerIp: peer.ip,
+      peerName: peer.name,
+      status: 'active',
+    });
+
+    wsClient.sendTo(peer, {
+      type: 'REMOTE_ACCEPT',
+      sessionId,
+      fromUuid: profile.uuid,
+      toUuid: fromUuid,
+      screenWidth: width,
+      screenHeight: height,
+    });
+
+    const hostWin = _createHostWindow(sessionId, peer.name);
+    sessions.get(sessionId).hostWin = hostWin;
+
+    return { ok: true };
+  });
+
+  // Host rejects incoming remote request
+  ipcMain.handle('remote:reject', (_e, { sessionId, fromUuid }) => {
+    const peer = store.getOnlineUsers().find(u => u.uuid === fromUuid);
+    const profile = db.getProfile();
+    if (peer && profile) {
+      wsClient.sendTo(peer, {
+        type: 'REMOTE_REJECT',
+        sessionId,
+        fromUuid: profile.uuid,
+        toUuid: fromUuid,
+      });
+    }
+    sessions.delete(sessionId);
+    return { ok: true };
+  });
+
+  // Either side ends session
+  ipcMain.handle('remote:end', (_e, { sessionId }) => {
+    _endSession(sessionId, true);
+    return { ok: true };
+  });
+
+  // Relay WebRTC signaling (SDP + ICE) from a remote window to WS peer
+  ipcMain.on('remote:sendSignaling', (_e, msg) => {
+    const peer = store.getOnlineUsers().find(u => u.uuid === msg.toUuid);
+    if (peer) wsClient.sendTo(peer, msg);
+  });
+
+  // Get available screen capture sources (for host window)
+  ipcMain.handle('remote:getScreenSources', async () => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: 0, height: 0 },
+        fetchWindowIcons: false,
+      });
+      return sources.map(s => ({ id: s.id, name: s.name }));
+    } catch {
+      return [];
+    }
+  });
+
+  // Execute input event on host via robotjs
+  ipcMain.on('remote:executeInput', (_e, ev) => {
+    _executeInput(ev);
+  });
+}
+
+// ── Window creation ───────────────────────────────────────────────────────────
+
+function _createHostWindow(sessionId, peerName) {
+  const win = new BrowserWindow({
+    width: 380,
+    height: 150,
+    resizable: false,
+    alwaysOnTop: true,
+    frame: false,
+    title: `NeuroChat Remote — Sesión con ${peerName}`,
+    backgroundColor: '#0f1f1f',
+    webPreferences: {
+      preload: path.join(__dirname, '../renderer/remote-host-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  win._isRemoteHost = true;
+  win._sessionId = sessionId;
+
+  // Intercept getDisplayMedia calls and automatically provide primary screen
+  if (win.webContents.session.setDisplayMediaRequestHandler) {
+    win.webContents.session.setDisplayMediaRequestHandler(async (_req, callback) => {
+      try {
+        const sources = await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: { width: 0, height: 0 },
+        });
+        callback({ video: sources[0] });
+      } catch {
+        callback({});
+      }
+    });
+  }
+
+  const session = sessions.get(sessionId);
+  const profile = db?.getProfile();
+  win.loadFile(path.join(__dirname, '../renderer/remote-host.html'), {
+    query: {
+      sessionId,
+      peerName,
+      peerUuid: session?.peerUuid || '',
+      myUuid: profile?.uuid || '',
+    },
+  });
+
+  win.on('closed', () => {
+    const s = sessions.get(sessionId);
+    if (s) _endSession(sessionId, true);
+  });
+
+  return win;
+}
+
+function _createViewerWindow(sessionId, peerName, peerIp, screenW, screenH) {
+  const display = screen.getPrimaryDisplay();
+  const { width: sw, height: sh } = display.workAreaSize;
+
+  const ratio = (screenW || 1920) / (screenH || 1080);
+  let winW = Math.min(1280, sw - 40);
+  let winH = Math.round(winW / ratio) + 50; // +50 for toolbar
+  if (winH > sh - 40) {
+    winH = sh - 40;
+    winW = Math.round((winH - 50) * ratio);
+  }
+
+  const win = new BrowserWindow({
+    width: Math.max(800, winW),
+    height: Math.max(500, winH),
+    minWidth: 640,
+    minHeight: 420,
+    title: `NeuroChat Remote — ${peerName} (${peerIp})`,
+    backgroundColor: '#0d0d0d',
+    webPreferences: {
+      preload: path.join(__dirname, '../renderer/remote-viewer-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  win._isRemoteViewer = true;
+  win._sessionId = sessionId;
+
+  win.loadFile(path.join(__dirname, '../renderer/remote-viewer.html'), {
+    query: { sessionId, peerName, peerIp, peerUuid: sessions.get(sessionId)?.peerUuid || '' },
+  });
+
+  win.on('closed', () => {
+    _endSession(sessionId, true);
+  });
+
+  return win;
+}
+
+// ── Session lifecycle ─────────────────────────────────────────────────────────
+
+function _endSession(sessionId, notify) {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  sessions.delete(sessionId);
+
+  if (notify) {
+    const peer = store.getOnlineUsers().find(u => u.uuid === session.peerUuid);
+    const profile = db?.getProfile();
+    if (peer && profile) {
+      wsClient.sendTo(peer, {
+        type: 'REMOTE_END',
+        sessionId,
+        fromUuid: profile.uuid,
+        toUuid: session.peerUuid,
+      });
+    }
+  }
+
+  if (session.hostWin && !session.hostWin.isDestroyed()) session.hostWin.destroy();
+  if (session.viewerWin && !session.viewerWin.isDestroyed()) session.viewerWin.destroy();
+}
+
+// ── WebSocket signaling handler (called by wsServer.handleIncoming) ───────────
+
+function handleSignaling(msg) {
+  const { type, sessionId } = msg;
+
+  if (type === 'REMOTE_REQUEST') {
+    _notifyMainWindows('remote:incoming-request', msg);
+    return;
+  }
+
+  if (type === 'REMOTE_ACCEPT') {
+    const session = sessions.get(sessionId);
+    if (session?.role === 'viewer' && session.status === 'pending') {
+      session.status = 'active';
+      const viewerWin = _createViewerWindow(
+        sessionId,
+        session.peerName,
+        session.peerIp,
+        msg.screenWidth,
+        msg.screenHeight
+      );
+      session.viewerWin = viewerWin;
+    }
+    _notifyMainWindows('remote:session-accepted', { sessionId });
+    return;
+  }
+
+  if (type === 'REMOTE_REJECT') {
+    sessions.delete(sessionId);
+    _notifyMainWindows('remote:session-rejected', { sessionId });
+    return;
+  }
+
+  if (type === 'REMOTE_END') {
+    const session = sessions.get(sessionId);
+    if (session?.hostWin && !session.hostWin.isDestroyed()) {
+      session.hostWin.webContents.send('remote:session-ended', { sessionId });
+    }
+    if (session?.viewerWin && !session.viewerWin.isDestroyed()) {
+      session.viewerWin.webContents.send('remote:session-ended', { sessionId });
+    }
+    _endSession(sessionId, false);
+    _notifyMainWindows('remote:session-ended', { sessionId });
+    return;
+  }
+
+  // WebRTC signaling (SDP offer/answer + ICE candidates) — forward to correct window
+  if (type === 'REMOTE_SDP' || type === 'REMOTE_ICE') {
+    const session = sessions.get(sessionId);
+    if (!session) return;
+    const target =
+      session.role === 'host' ? session.hostWin : session.viewerWin;
+    if (target && !target.isDestroyed()) {
+      target.webContents.send('remote:signaling', msg);
+    }
+  }
+}
+
+// ── Input simulation (Windows host) ──────────────────────────────────────────
+
+let _robot = null;
+function _getRobot() {
+  if (_robot !== null) return _robot;
+  try {
+    _robot = require('robotjs');
+  } catch {
+    _robot = false;
+    console.warn('[remoteDesktop] robotjs no disponible — control de input deshabilitado');
+  }
+  return _robot;
+}
+
+function _executeInput(ev) {
+  const r = _getRobot();
+  if (!r) return;
+  const { width, height } = screen.getPrimaryDisplay().size;
+
+  try {
+    switch (ev.type) {
+      case 'mousemove':
+        r.moveMouse(Math.round(ev.x * width), Math.round(ev.y * height));
+        break;
+      case 'mousedown':
+      case 'mouseup': {
+        const btn = ev.button === 2 ? 'right' : ev.button === 1 ? 'middle' : 'left';
+        r.moveMouse(Math.round(ev.x * width), Math.round(ev.y * height));
+        r.mouseToggle(ev.type === 'mousedown' ? 'down' : 'up', btn);
+        break;
+      }
+      case 'dblclick':
+        r.moveMouse(Math.round(ev.x * width), Math.round(ev.y * height));
+        r.mouseClick('left', true);
+        break;
+      case 'wheel': {
+        const sx = Math.round((ev.dx || 0) / 120);
+        const sy = Math.round((ev.dy || 0) / 120);
+        if (sx !== 0 || sy !== 0) r.scrollMouse(sx, sy);
+        break;
+      }
+      case 'keydown': {
+        const key = _mapKey(ev.key);
+        if (!key) break;
+        const mods = (ev.modifiers || []).map(_mapMod).filter(Boolean);
+        mods.length > 0 ? r.keyTap(key, mods) : r.keyTap(key);
+        break;
+      }
+    }
+  } catch (err) {
+    console.warn('[remoteDesktop] input error:', err.message);
+  }
+}
+
+function _mapKey(key) {
+  const MAP = {
+    ' ': 'space', Enter: 'enter', Backspace: 'backspace', Tab: 'tab',
+    Escape: 'escape', Delete: 'delete', Insert: 'insert',
+    Home: 'home', End: 'end', PageUp: 'pageup', PageDown: 'pagedown',
+    ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down',
+    F1: 'f1', F2: 'f2', F3: 'f3', F4: 'f4', F5: 'f5', F6: 'f6',
+    F7: 'f7', F8: 'f8', F9: 'f9', F10: 'f10', F11: 'f11', F12: 'f12',
+    Control: 'control', Alt: 'alt', Shift: 'shift', Meta: 'command',
+    CapsLock: 'caps_lock', PrintScreen: 'printscreen',
+  };
+  return MAP[key] ?? (key.length === 1 ? key.toLowerCase() : null);
+}
+
+function _mapMod(m) {
+  return { ctrl: 'control', alt: 'alt', shift: 'shift', meta: 'command' }[m] ?? null;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function _notifyMainWindows(channel, data) {
+  BrowserWindow.getAllWindows()
+    .filter(w => !w.isDestroyed() && !w._isRemoteHost && !w._isRemoteViewer)
+    .forEach(w => w.webContents.send(channel, data));
+}
+
+module.exports = { init, handleSignaling, sessions };
