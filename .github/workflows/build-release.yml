@@ -43,13 +43,18 @@ jobs:
             echo "version=$VERSION" >> $GITHUB_OUTPUT
           fi
 
-      - name: Crear draft release
+      - name: Crear draft release (idempotente)
         run: |
-          gh release create "v${{ steps.ver.outputs.version }}" \
-            --repo "${{ github.repository }}" \
-            --title "NeuroChat v${{ steps.ver.outputs.version }}" \
-            --generate-notes \
-            --draft
+          if gh release view "v${{ steps.ver.outputs.version }}" \
+              --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "Release v${{ steps.ver.outputs.version }} ya existe, se reutilizará."
+          else
+            gh release create "v${{ steps.ver.outputs.version }}" \
+              --repo "${{ github.repository }}" \
+              --title "NeuroChat v${{ steps.ver.outputs.version }}" \
+              --generate-notes \
+              --draft
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
