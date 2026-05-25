@@ -81,8 +81,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 3. Build macOS universal (.dmg + .zip — Intel x64 + Apple Silicon arm64)
-  build-macos:
+  # ── 3a. Build macOS Intel x64 — runner nativo Intel para módulos nativos ──
+  build-macos-x64:
+    needs: create-release
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Build macOS x64 DMG + ZIP + publicar en release draft
+        run: npx electron-builder --mac --arch x64 --publish onTagOrDraft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 3b. Build macOS Apple Silicon arm64 — runner nativo arm64 ─────────────
+  build-macos-arm64:
     needs: create-release
     runs-on: macos-latest
     steps:
@@ -96,19 +116,14 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Build macOS universal DMG + ZIP + publicar en release draft
-        # arch:universal en electron-builder.yml hace que electron-builder
-        # reconstruya los módulos nativos (better-sqlite3) para x64 Y arm64
-        # internamente y los combine con lipo — no hay que pre-rebuildar.
-        # Pre-rebuildar solo el host (arm64) rompía Intel Macs al cargar
-        # el slice x64 con el módulo arm64.
-        run: npx electron-builder --mac --publish onTagOrDraft
+      - name: Build macOS arm64 DMG + ZIP + publicar en release draft
+        run: npx electron-builder --mac --arch arm64 --publish onTagOrDraft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Publicar release (quitar borrador) cuando ambos builds terminen ────
+  # ── 4. Publicar release (quitar borrador) cuando todos los builds terminen ─
   publish-release:
-    needs: [create-release, build-windows, build-macos]
+    needs: [create-release, build-windows, build-macos-x64, build-macos-arm64]
     runs-on: ubuntu-latest
     steps:
       - name: Publicar release (quitar borrador)
