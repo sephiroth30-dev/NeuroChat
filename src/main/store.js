@@ -15,7 +15,7 @@ function setUserOnline(user) {
 function setUserOffline(uuid) {
   const u = state.onlineUsers.get(uuid);
   if (u) {
-    state.onlineUsers.set(uuid, { ...u, status: 'offline', isOnline: false });
+    state.onlineUsers.set(uuid, { ...u, status: 'offline', isOnline: false, is_online: 0 });
   }
 }
 

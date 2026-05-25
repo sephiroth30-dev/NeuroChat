@@ -10,6 +10,7 @@ autoUpdater.logger = null; // silence electron-updater's own logging
 let _installTimer = null;
 let _shuttingDown = false;
 let _periodicTimer = null;
+let _downloadedFile = null;
 
 const FORCED_INSTALL_DELAY_MS = 10 * 60 * 1000;
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -45,6 +46,8 @@ function init() {
   });
 
   autoUpdater.on('update-downloaded', info => {
+    _downloadedFile = info.downloadedFile || null;
+
     notifyRenderer('update:status', {
       state: 'required',
       version: info.version,
@@ -119,8 +122,8 @@ function installUpdate() {
     return;
   }
 
-  // macOS: download the ZIP to ~/Downloads, strip quarantine, open for drag-and-drop
-  const downloadedFile = autoUpdater.currentVersion?.downloadedFile;
+  // macOS: extract ZIP to ~/Downloads, strip quarantine, open for drag-and-drop
+  const downloadedFile = _downloadedFile;
   if (!downloadedFile) {
     notifyRenderer('update:status', {
       state: 'error',

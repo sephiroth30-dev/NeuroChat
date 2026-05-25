@@ -592,3 +592,23 @@ img {
   color: var(--nc-danger, #e05a5a);
   background: color-mix(in srgb, var(--nc-danger, #e05a5a) 10%, transparent);
 }
+
+/* ─── Update banner ──────────────────────────────────────────────────────── */
+.update-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  padding: 7px 16px;
+  font-size: 12px;
+  text-align: center;
+  background: color-mix(in srgb, var(--nc-accent, #4A9E8F) 18%, var(--nc-bg, #1e1f22));
+  color: var(--nc-text-1, #e0e0e0);
+  border-top: 1px solid color-mix(in srgb, var(--nc-accent, #4A9E8F) 40%, transparent);
+  transition: background 0.3s;
+}
+.update-banner.update-ready {
+  background: color-mix(in srgb, #4A9E8F 25%, var(--nc-bg, #1e1f22));
+  font-weight: 500;
+}

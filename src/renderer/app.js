@@ -1807,6 +1807,23 @@ function subscribeIPCEvents() {
   nc.on('remote:session-ended', () => {
     showToast('Sesión remota terminada.', 'info');
   });
+
+  nc.on('update:status', info => {
+    const banner = $('update-banner');
+    if (!banner) return;
+    if (info.state === 'downloading') {
+      const pct = info.percent > 0 ? ` (${info.percent}%)` : '';
+      banner.textContent = `Descargando actualización NeuroChat v${info.version}${pct}…`;
+      banner.className = 'update-banner';
+      banner.style.display = '';
+    } else if (info.state === 'required') {
+      banner.textContent = `✓ NeuroChat v${info.version} descargado — se instalará en ${info.installInMinutes} min`;
+      banner.className = 'update-banner update-ready';
+      banner.style.display = '';
+    } else if (info.state === 'latest' || info.state === 'error') {
+      banner.style.display = 'none';
+    }
+  });
 }
 
 // ── Remote desktop ────────────────────────────────────────────────────────────
