@@ -1,17 +1,21 @@
 name: Build & Release
 
-# Dispara al hacer push de un tag v*.*.* (ej: v2.2.0)
-# O manualmente desde la UI de GitHub Actions → "Run workflow"
+# Dispara con:
+#  a) push de tag  v*.*.* (ej: git tag v2.2.2 && git push origin v2.2.2)
+#  b) push de branch releases/** (ej: git push origin main:releases/v2.2.2)
+#  c) manualmente desde la UI de GitHub Actions → "Run workflow"
 on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+    branches:
+      - 'releases/**'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versión a compilar y publicar (ej: 2.2.0)'
+        description: 'Versión a compilar y publicar (ej: 2.2.2)'
         required: true
-        default: '2.2.0'
+        default: '2.2.2'
 
 permissions:
   contents: write   # necesario para crear releases y subir assets
@@ -25,13 +29,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolver versión (tag o input manual)
+      - name: Resolver versión (tag, branch releases/** o input manual)
         id: ver
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+          else
+            # Branch releases/v2.2.2 → extrae 2.2.2
+            BRANCH="${{ github.ref_name }}"
+            VERSION="${BRANCH#releases/v}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
           fi
 
       - name: Crear draft release
@@ -67,7 +76,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 3. Build macOS (.dmg + .zip + latest-mac.yml) ────────────────────────
+  # ── 3. Build macOS universal (.dmg + .zip — Intel x64 + Apple Silicon arm64)
   build-macos:
     needs: create-release
     runs-on: macos-latest
@@ -82,14 +91,14 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Compilar módulos nativos para Electron (macOS)
-        # robotjs puede fallar en macOS sin permiso de accesibilidad (solo se
-        # necesita en hosts Windows). Si falla, compilar solo better-sqlite3.
-        run: |
-          npx @electron/rebuild -f -w better-sqlite3,robotjs \
-            || npx @electron/rebuild -f -w better-sqlite3
+      - name: Compilar módulos nativos para Electron (macOS — better-sqlite3)
+        # robotjs está en optionalDependencies; si falla en macOS no es fatal
+        # (Mac solo actúa como viewer, nunca como host de input)
+        run: npx @electron/rebuild -f -w better-sqlite3
 
-      - name: Build macOS DMG + ZIP + publicar en release draft
+      - name: Build macOS universal DMG + ZIP + publicar en release draft
+        # electron-builder reconstruye internamente para x64 y arm64 al
+        # detectar arch: universal en electron-builder.yml
         run: npx electron-builder --mac --publish onTagOrDraft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

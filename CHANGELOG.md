@@ -5,6 +5,20 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.2] — 2026-05-25 — Compatibilidad universal macOS (Intel + Apple Silicon)
+
+### Corregido
+- **macOS universal binary**: el instalador DMG ahora contiene código nativo para **x64 (Intel, MacBook Air 2017 y anteriores)** y **arm64 (Apple Silicon M1/M2/M3/M4)** en un solo archivo. La versión 2.2.0 solo incluía arm64 porque el runner de GitHub Actions es Apple Silicon.
+- **`minimumSystemVersion: 10.15.0`**: compatible con macOS Catalina, Big Sur, Monterey, Ventura y Sonoma.
+- **`robotjs` → `optionalDependencies`**: en macOS la compilación de robotjs es opcional (Mac actúa siempre como viewer, nunca como host de input). El build ya no falla si robotjs no puede compilarse para arm64/x64 en macOS.
+
+### Modificado
+- `electron-builder.yml` — mac target: `arch: universal`, `minimumSystemVersion: '10.15.0'`.
+- `.github/workflows/build-release.yml` — macOS job simplificado; restaurado trigger `branches: releases/**`; robotjs excluido del rebuild manual en macOS.
+- `package.json` — robotjs movido de `dependencies` a `optionalDependencies`.
+
+---
+
 ## [2.2.1] — 2026-05-25 — Auto-aceptación de soporte remoto por dominio Windows
 
 ### Añadido
