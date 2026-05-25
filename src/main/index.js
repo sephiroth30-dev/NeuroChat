@@ -14,6 +14,19 @@ let windowManager, database, discovery, wsServer, fileTransfer, tray, _notifier,
 app.whenReady().then(async () => {
   console.log(`[NeuroChat] v${app.getVersion()} — iniciando`);
 
+  try {
+    await _startup();
+  } catch (err) {
+    const { dialog } = require('electron');
+    dialog.showErrorBox(
+      `NeuroChat v${app.getVersion()} — Error al iniciar`,
+      `${err.message}\n\n${err.stack || ''}`
+    );
+    app.exit(1);
+  }
+});
+
+async function _startup() {
   // Load modules in dependency order
   database = require('./database');
   await database.initialize();
@@ -101,7 +114,7 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     windowManager.showMainWindow();
   });
-});
+}
 
 app.on('second-instance', () => {
   if (windowManager) windowManager.showMainWindow();
