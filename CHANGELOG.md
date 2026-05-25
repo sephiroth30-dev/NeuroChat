@@ -5,6 +5,26 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.1] — 2026-05-25 — Auto-aceptación de soporte remoto por dominio Windows
+
+### Añadido
+- **Confianza por dominio**: las solicitudes de soporte remoto de usuarios en el mismo dominio de Windows (`USERDOMAIN`) se aceptan automáticamente, sin modal de confirmación.
+- **Ajuste `remoteSupportMode`** en Configuración → Soporte Remoto:
+  - `Preguntar siempre` (predeterminado): muestra el modal para cada solicitud.
+  - `Aceptar automáticamente (mismo dominio)`: auto-acepta si el solicitante pertenece al mismo dominio Windows.
+  - `Aceptar siempre sin preguntar`: auto-acepta cualquier solicitud.
+- **Campo `domain`** en el paquete UDP de anuncio (`NEUROCHAT_ANNOUNCE`) — valor de `USERDOMAIN` en Windows.
+- **Campo `fromDomain`** en el mensaje WebSocket `REMOTE_REQUEST` — permite comparación de dominio en el host.
+- **Detección de dominio** en la UI de Ajustes: muestra el dominio detectado o un aviso si no hay dominio.
+
+### Modificado
+- `src/main/discovery.js` — `buildPayload()` añade `domain`.
+- `src/main/remoteDesktop.js` — `REMOTE_REQUEST` handler evalúa `remoteSupportMode` y llama a `_autoAccept()` si corresponde; nueva función `_autoAccept()`.
+- `src/main/ipcHandlers.js` — `settings:get` devuelve `remoteSupportMode` y `remoteDomain`.
+- `src/renderer/views/settings.js` — nueva sección "Soporte Remoto" con selector de modo y info de dominio.
+
+---
+
 ## [2.2.0] — 2026-05-25 — Soporte remoto P2P nativo (sin herramientas externas)
 
 ### Añadido

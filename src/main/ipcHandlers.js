@@ -358,6 +358,10 @@ function register() {
       startWithWindows: s.startWithWindows !== false,
       theme: s.theme || 'auto',
       discoveryTargets: s.discoveryTargets || DEFAULT_DISCOVERY_TARGETS,
+      remoteSupportMode: s.remoteSupportMode || 'ask',
+      remoteDomain: process.platform === 'win32'
+        ? (process.env.USERDOMAIN && process.env.USERDOMAIN !== process.env.COMPUTERNAME ? process.env.USERDOMAIN : '')
+        : '',
       ...s,
     };
   });

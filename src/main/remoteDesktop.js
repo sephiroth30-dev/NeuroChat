@@ -42,6 +42,7 @@ function _registerIPC() {
       sessionId,
       fromUuid: profile.uuid,
       fromName: profile.name,
+      fromDomain: process.platform === 'win32' ? (process.env.USERDOMAIN || '') : '',
       toUuid: peerUuid,
     });
 
@@ -252,7 +253,17 @@ function handleSignaling(msg) {
   const { type, sessionId } = msg;
 
   if (type === 'REMOTE_REQUEST') {
-    _notifyMainWindows('remote:incoming-request', msg);
+    const settings = db.getAllSettings ? db.getAllSettings() : {};
+    const mode = settings.remoteSupportMode || 'ask';
+    const myDomain = process.platform === 'win32' ? (process.env.USERDOMAIN || '') : '';
+    const fromDomain = msg.fromDomain || '';
+    const sameDomain = myDomain && fromDomain && myDomain.toLowerCase() === fromDomain.toLowerCase();
+
+    if (mode === 'auto-accept-all' || (mode === 'auto-accept-domain' && sameDomain)) {
+      _autoAccept(msg);
+    } else {
+      _notifyMainWindows('remote:incoming-request', msg);
+    }
     return;
   }
 
@@ -374,6 +385,40 @@ function _mapKey(key) {
 
 function _mapMod(m) {
   return { ctrl: 'control', alt: 'alt', shift: 'shift', meta: 'command' }[m] ?? null;
+}
+
+// ── Auto-accept (domain trust) ────────────────────────────────────────────────
+
+function _autoAccept(msg) {
+  const { sessionId, fromUuid, fromName } = msg;
+  const peer = store.getOnlineUsers().find(u => u.uuid === fromUuid);
+  if (!peer?.ip) return;
+
+  const profile = db.getProfile();
+  if (!profile) return;
+  const { width, height } = screen.getPrimaryDisplay().size;
+
+  sessions.set(sessionId, {
+    role: 'host',
+    peerUuid: fromUuid,
+    peerIp: peer.ip,
+    peerName: fromName || peer.name,
+    status: 'active',
+  });
+
+  wsClient.sendTo(peer, {
+    type: 'REMOTE_ACCEPT',
+    sessionId,
+    fromUuid: profile.uuid,
+    toUuid: fromUuid,
+    screenWidth: width,
+    screenHeight: height,
+  });
+
+  const hostWin = _createHostWindow(sessionId, fromName || peer.name);
+  sessions.get(sessionId).hostWin = hostWin;
+
+  _notifyMainWindows('remote:session-started', { sessionId, peerName: fromName || peer.name });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

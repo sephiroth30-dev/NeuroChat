@@ -119,6 +119,7 @@ function buildPayload() {
       ip: ifaces[0].ip,
       ips,
       version: app.getVersion(),
+      domain: process.platform === 'win32' ? (process.env.USERDOMAIN || '') : '',
     })
   );
 }

@@ -301,6 +301,26 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
         </div>
 
         <div class="settings-section">
+          <h3>Soporte Remoto</h3>
+          <div class="card">
+            <div class="settings-row">
+              <div class="settings-row-label">
+                <span>Aceptar solicitudes</span>
+                <small>Cómo responder a peticiones de soporte remoto entrantes</small>
+              </div>
+              <select class="form-input" id="s-remote-mode" style="max-width:230px">
+                <option value="ask">Preguntar siempre</option>
+                <option value="auto-accept-domain">Aceptar automáticamente (mismo dominio)</option>
+                <option value="auto-accept-all">Aceptar siempre sin preguntar</option>
+              </select>
+            </div>
+            <div class="settings-row" style="padding-top:0;padding-bottom:4px">
+              <small id="s-remote-domain-info" style="color:var(--nc-text-2);padding:0 4px"></small>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <h3>Acerca de</h3>
           <div class="card">
             <div class="settings-row">
@@ -505,6 +525,20 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
   const unsubUpdate = nc.on('update:status', status => {
     setUpdateState(status.state, status);
   });
+
+  // Remote support mode
+  const remoteModeEl = container.querySelector('#s-remote-mode');
+  remoteModeEl.value = settings.remoteSupportMode || 'ask';
+  remoteModeEl.onchange = e => nc.saveSettings({ remoteSupportMode: e.target.value });
+
+  const domainInfoEl = container.querySelector('#s-remote-domain-info');
+  const remoteDomain = settings.remoteDomain || '';
+  if (remoteDomain) {
+    domainInfoEl.textContent = `Dominio detectado: ${remoteDomain} — la opción "mismo dominio" aceptará usuarios de ${remoteDomain}`;
+    domainInfoEl.style.color = 'var(--nc-online)';
+  } else {
+    domainInfoEl.textContent = 'No se detectó dominio de Windows. "Mismo dominio" solo aplicará si el solicitante tampoco pertenece a un dominio.';
+  }
 
   // Clean up listener when settings panel is closed (back button)
   const origBack = container.querySelector('#back-btn').onclick;
