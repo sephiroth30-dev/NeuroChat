@@ -1,0 +1,96 @@
+name: Build & Release
+
+# Dispara al hacer push de un tag v*.*.* (ej: v2.2.0)
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write   # necesario para crear releases y subir assets
+
+jobs:
+  # ── 1. Crear draft release en GitHub antes de que los builds suban assets ──
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Leer versión de package.json
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Crear draft release
+        run: |
+          gh release create "v${{ steps.ver.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --title "NeuroChat v${{ steps.ver.outputs.version }}" \
+            --generate-notes \
+            --draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 2. Build Windows (.exe NSIS installer + latest.yml) ───────────────────
+  build-windows:
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar módulos nativos para Electron (Windows x64)
+        run: npx @electron/rebuild -f -w better-sqlite3,robotjs
+
+      - name: Build Windows NSIS + publicar en release draft
+        run: npx electron-builder --win --publish onTagOrDraft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 3. Build macOS (.dmg + .zip + latest-mac.yml) ────────────────────────
+  build-macos:
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar módulos nativos para Electron (macOS)
+        # robotjs puede fallar en macOS sin permiso de accesibilidad (solo se
+        # necesita en hosts Windows). Si falla, compilar solo better-sqlite3.
+        run: |
+          npx @electron/rebuild -f -w better-sqlite3,robotjs \
+            || npx @electron/rebuild -f -w better-sqlite3
+
+      - name: Build macOS DMG + ZIP + publicar en release draft
+        run: npx electron-builder --mac --publish onTagOrDraft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 4. Publicar release (quitar borrador) cuando ambos builds terminen ────
+  publish-release:
+    needs: [create-release, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publicar release (quitar borrador)
+        run: |
+          gh release edit "v${{ needs.create-release.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
