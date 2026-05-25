@@ -15,10 +15,45 @@ document.getElementById('overlay-peer-name').textContent = PEER_NAME;
 document.title = `NeuroChat Remote — ${PEER_NAME} (${PEER_IP})`;
 
 let pc = null;
-let dc = null; // DataChannel to host (input + quality commands)
+let dc = null;
 let statsInterval = null;
 let toolbarTimer = null;
-let inputEnabled = false; // only after stream arrives
+let connectTimer = null;
+let inputEnabled = false;
+
+const CONNECT_TIMEOUT_MS = 30_000;
+
+// ── Connecting overlay helpers ────────────────────────────────────────────────
+
+function showConnectError(msg) {
+  clearTimeout(connectTimer);
+  connectTimer = null;
+  const spinner = document.getElementById('overlay-spinner');
+  const msgEl   = document.getElementById('overlay-msg');
+  if (spinner) spinner.style.display = 'none';
+  if (msgEl)   { msgEl.innerHTML = msg; msgEl.style.color = '#e07070'; }
+  overlay.style.display = 'flex';
+  const btn = document.getElementById('cancel-connect-btn');
+  if (btn) btn.textContent = 'Cerrar';
+}
+
+function startConnectTimeout() {
+  connectTimer = setTimeout(() => {
+    connectTimer = null;
+    showConnectError('No se pudo conectar con <strong>' + PEER_NAME + '</strong>.<br>El equipo remoto no respondió a tiempo.');
+    remoteViewer.endSession(SESSION_ID).catch(() => {});
+  }, CONNECT_TIMEOUT_MS);
+}
+
+// ── Cancel button (visible while connecting) ──────────────────────────────────
+
+document.getElementById('cancel-connect-btn').addEventListener('click', async () => {
+  clearTimeout(connectTimer);
+  connectTimer = null;
+  cleanup();
+  await remoteViewer.endSession(SESSION_ID).catch(() => {});
+  window.close();
+});
 
 // ── Toolbar auto-hide ─────────────────────────────────────────────────────────
 
@@ -41,6 +76,8 @@ async function init() {
     if (e.track.kind === 'video') {
       video.srcObject = e.streams[0];
       video.onloadedmetadata = () => {
+        clearTimeout(connectTimer);
+        connectTimer = null;
         overlay.style.display = 'none';
         inputEnabled = true;
         video.play().catch(() => {});
@@ -65,6 +102,14 @@ async function init() {
       candidate: e.candidate,
     });
   };
+
+  // ICE connection failure → show error
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+      showConnectError('Conexión interrumpida con <strong>' + PEER_NAME + '</strong>.');
+      cleanup();
+    }
+  };
 }
 
 // Handle incoming signaling (offer + ICE from host)
@@ -88,6 +133,7 @@ remoteViewer.on('remote:signaling', async msg => {
     }
   } catch (err) {
     console.warn('[remote-viewer] signaling error:', err.message);
+    showConnectError('Error al establecer conexión: ' + err.message);
   }
 });
 
@@ -143,7 +189,6 @@ video.addEventListener('click', () => video.focus());
 
 video.addEventListener('keydown', e => {
   if (!inputEnabled) return;
-  // Let Escape pass through to show toolbar / exit fullscreen
   if (e.key === 'Escape') return;
   e.preventDefault();
   const mods = [];
@@ -157,13 +202,14 @@ video.addEventListener('keydown', e => {
 // ── Quality control ───────────────────────────────────────────────────────────
 
 document.getElementById('quality-select').addEventListener('change', e => {
-  const preset = e.target.value;
-  sendInput({ type: 'quality', preset });
+  sendInput({ type: 'quality', preset: e.target.value });
 });
 
 // ── Toolbar buttons ───────────────────────────────────────────────────────────
 
 document.getElementById('end-btn').addEventListener('click', async () => {
+  clearTimeout(connectTimer);
+  cleanup();
   await remoteViewer.endSession(SESSION_ID);
   window.close();
 });
@@ -206,6 +252,9 @@ function cleanup() {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
-// Initialize PC immediately so we're ready to receive the SDP offer from host
-init().catch(err => console.error('[remote-viewer] init error:', err));
+init().catch(err => {
+  console.error('[remote-viewer] init error:', err);
+  showConnectError('Error al inicializar: ' + err.message);
+});
+startConnectTimeout();
 showToolbar();

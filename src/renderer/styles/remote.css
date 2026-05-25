@@ -126,6 +126,19 @@
 
 .connecting-overlay strong { color: #cde8e2; }
 
+.overlay-cancel-btn {
+  margin-top: 14px;
+  padding: 7px 22px;
+  border: 1px solid rgba(224, 90, 90, 0.45);
+  border-radius: 7px;
+  background: transparent;
+  color: #e07070;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.overlay-cancel-btn:hover { background: rgba(224, 90, 90, 0.15); color: #ff9999; }
+
 /* ── Toolbar ───────────────────────────────────────────────────────────────── */
 
 .viewer-toolbar {

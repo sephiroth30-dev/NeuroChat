@@ -5,6 +5,43 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.4] — 2026-05-25 — Correcciones sesión remota + macOS Gatekeeper
+
+### Corregido — Sesión remota
+
+#### Race condition (bug principal — conexión infinita)
+- **Mensajes WebRTC descartados silenciosamente**: cuando el host enviaba el SDP offer, la ventana del viewer en Mac acababa de crearse pero aún no había terminado de cargar. `webContents.send()` antes de `did-finish-load` descarta el mensaje sin error. La oferta nunca llegaba al renderer → conexión infinita.
+- **Fix**: se añade una cola (`_signalingQueue`) en `remoteDesktop.js`. Los mensajes `REMOTE_SDP` e `REMOTE_ICE` se buferizan si la ventana aún está cargando y se envían todos en cuanto dispara `did-finish-load`.
+
+#### Botón Cancelar + timeout en el viewer
+- La overlay "Conectando…" ahora incluye un botón **Cancelar** siempre visible.
+- Timeout de **30 segundos**: si no se establece conexión, se muestra un mensaje de error y se cierra la sesión automáticamente.
+- Errores de ICE (`failed`/`disconnected`) se muestran en la overlay en lugar de dejar la pantalla congelada.
+
+#### El host notifica al viewer al fallar
+- Si `getDisplayMedia` falla en el host (permiso denegado, etc.), ahora llama a `endSession` para notificar al viewer. Antes, el viewer se quedaba esperando infinitamente.
+- Igual para fallos de `createOffer`.
+
+#### WebRTC bloqueado por Windows Firewall
+- El NSIS solo tenía reglas para puertos fijos (45678-45680). WebRTC usa puertos UDP efímeros (>49152) para el stream de video → el firewall los bloqueaba en Windows.
+- **Fix**: se añade regla a nivel de aplicación (`NeuroChat.exe`, `dir=in protocol=any`) que permite todo el tráfico entrante del proceso, incluyendo los puertos dinámicos de WebRTC.
+
+### Corregido — macOS
+
+- Se incluye en el DMG el archivo **"Abrir NeuroChat (primera vez).command"**: script que elimina la restricción de Gatekeeper (`xattr -rd com.apple.quarantine`) y abre la app. Solo necesario la primera vez en Macs con macOS Gatekeeper activo (apps no firmadas).
+
+### Modificado
+- `src/main/remoteDesktop.js` — `_signalingQueue`, `_createViewerWindow` bufering, `handleSignaling` cola.
+- `src/renderer/remote-viewer.js` — timeout, botón cancelar, ICE error handler.
+- `src/renderer/remote-viewer.html` — botón cancelar en overlay.
+- `src/renderer/remote-host.js` — `endSession` en todos los puntos de fallo.
+- `src/renderer/styles/remote.css` — `.overlay-cancel-btn`.
+- `build-resources/installer-script.nsh` — regla `NeuroChat App` para WebRTC.
+- `build-resources/abrir-neurochat.command` — nuevo script macOS.
+- `electron-builder.yml` — `dmg.contents` con el script de primera apertura.
+
+---
+
 ## [2.2.3] — 2026-05-25 — Actualizaciones 100 % silenciosas + reducción de tamaño
 
 ### Actualizaciones silenciosas

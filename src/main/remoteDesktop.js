@@ -10,6 +10,10 @@ let _initialized = false;
 // Active sessions: sessionId → { role, peerUuid, peerIp, peerName, hostWin, viewerWin, status }
 const sessions = new Map();
 
+// Signaling messages that arrive before the target window has finished loading
+// are queued here and flushed on did-finish-load.
+const _signalingQueue = new Map(); // sessionId → msg[]
+
 function init() {
   if (_initialized) return;
   _initialized = true;
@@ -216,7 +220,18 @@ function _createViewerWindow(sessionId, peerName, peerIp, screenW, screenH) {
     query: { sessionId, peerName, peerIp, peerUuid: sessions.get(sessionId)?.peerUuid || '' },
   });
 
+  // Buffer signaling messages until the renderer has loaded and set up its IPC listener.
+  // webContents.send() before did-finish-load is silently dropped.
+  _signalingQueue.set(sessionId, []);
+  win.webContents.once('did-finish-load', () => {
+    const pending = _signalingQueue.get(sessionId);
+    if (!pending) return;
+    _signalingQueue.delete(sessionId);
+    if (!win.isDestroyed()) pending.forEach(m => win.webContents.send('remote:signaling', m));
+  });
+
   win.on('closed', () => {
+    _signalingQueue.delete(sessionId);
     _endSession(sessionId, true);
   });
 
@@ -243,6 +258,7 @@ function _endSession(sessionId, notify) {
     }
   }
 
+  _signalingQueue.delete(sessionId);
   if (session.hostWin && !session.hostWin.isDestroyed()) session.hostWin.destroy();
   if (session.viewerWin && !session.viewerWin.isDestroyed()) session.viewerWin.destroy();
 }
@@ -307,9 +323,13 @@ function handleSignaling(msg) {
   if (type === 'REMOTE_SDP' || type === 'REMOTE_ICE') {
     const session = sessions.get(sessionId);
     if (!session) return;
-    const target =
-      session.role === 'host' ? session.hostWin : session.viewerWin;
-    if (target && !target.isDestroyed()) {
+    const target = session.role === 'host' ? session.hostWin : session.viewerWin;
+    if (!target || target.isDestroyed()) return;
+
+    const queue = _signalingQueue.get(sessionId);
+    if (queue !== undefined) {
+      queue.push(msg); // window still loading — will be flushed on did-finish-load
+    } else {
       target.webContents.send('remote:signaling', msg);
     }
   }
