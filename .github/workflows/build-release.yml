@@ -1,9 +1,5 @@
 name: Build & Release
 
-# Dispara con:
-#  a) push de tag  v*.*.* (ej: git tag v2.2.2 && git push origin v2.2.2)
-#  b) push de branch releases/** (ej: git push origin main:releases/v2.2.2)
-#  c) manualmente desde la UI de GitHub Actions → "Run workflow"
 on:
   push:
     tags:
@@ -18,10 +14,10 @@ on:
         default: '2.2.2'
 
 permissions:
-  contents: write   # necesario para crear releases y subir assets
+  contents: write
 
 jobs:
-  # ── 1. Crear draft release en GitHub antes de que los builds suban assets ──
+  # ── 1. Crear draft release ─────────────────────────────────────────────────
   create-release:
     runs-on: ubuntu-latest
     outputs:
@@ -29,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolver versión (tag, branch releases/** o input manual)
+      - name: Resolver versión
         id: ver
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -37,7 +33,6 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
           else
-            # Branch releases/v2.2.2 → extrae 2.2.2
             BRANCH="${{ github.ref_name }}"
             VERSION="${BRANCH#releases/v}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -47,7 +42,7 @@ jobs:
         run: |
           if gh release view "v${{ steps.ver.outputs.version }}" \
               --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "Release v${{ steps.ver.outputs.version }} ya existe, se reutilizará."
+            echo "Release ya existe, se reutilizará."
           else
             gh release create "v${{ steps.ver.outputs.version }}" \
               --repo "${{ github.repository }}" \
@@ -58,10 +53,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 2. Build Windows (.exe NSIS installer + latest.yml) ───────────────────
+  # ── 2. Build Windows ────────────────────────────────────────────────────────
   build-windows:
     needs: create-release
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -76,15 +72,16 @@ jobs:
       - name: Compilar módulos nativos para Electron (Windows x64)
         run: npx @electron/rebuild -f -w better-sqlite3,robotjs
 
-      - name: Build Windows NSIS + publicar en release draft
+      - name: Build Windows NSIS
         run: npx electron-builder --win --publish onTagOrDraft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 3a. Build macOS Intel x64 — runner nativo Intel para módulos nativos ──
+  # ── 3a. Build macOS Intel x64 — runner nativo Intel ────────────────────────
   build-macos-x64:
     needs: create-release
     runs-on: macos-13
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -96,15 +93,19 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Build macOS x64 DMG + ZIP + publicar en release draft
+      - name: Compilar better-sqlite3 para Electron x64 (nativo Intel)
+        run: npx @electron/rebuild -f -w better-sqlite3
+
+      - name: Build macOS x64 DMG + ZIP
         run: npx electron-builder --mac --arch x64 --publish onTagOrDraft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 3b. Build macOS Apple Silicon arm64 — runner nativo arm64 ─────────────
+  # ── 3b. Build macOS Apple Silicon arm64 — runner nativo arm64 ──────────────
   build-macos-arm64:
     needs: create-release
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -116,12 +117,15 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Build macOS arm64 DMG + ZIP + publicar en release draft
+      - name: Compilar better-sqlite3 para Electron arm64 (nativo Apple Silicon)
+        run: npx @electron/rebuild -f -w better-sqlite3
+
+      - name: Build macOS arm64 DMG + ZIP
         run: npx electron-builder --mac --arch arm64 --publish onTagOrDraft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Publicar release (quitar borrador) cuando todos los builds terminen ─
+  # ── 4. Publicar release ─────────────────────────────────────────────────────
   publish-release:
     needs: [create-release, build-windows, build-macos-x64, build-macos-arm64]
     runs-on: ubuntu-latest

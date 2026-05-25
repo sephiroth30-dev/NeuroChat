@@ -8,6 +8,10 @@ directories:
 
 compression: maximum
 
+# electron-builder no recompila módulos nativos — los compilamos
+# explícitamente con @electron/rebuild en el paso de CI anterior.
+npmRebuild: false
+
 # Only include source code and the runtime assets (tray icons).
 # Build-time assets (iconset PNGs, SVGs) are excluded — they're embedded
 # by electron-builder into the executable/bundle and not needed at runtime.
