@@ -9,7 +9,7 @@ if (!gotLock) {
 }
 
 // Lazy-loaded modules (initialized after app ready)
-let windowManager, database, discovery, wsServer, fileTransfer, tray, _notifier, ipcHandlers, updater;
+let windowManager, database, discovery, wsServer, fileTransfer, tray, _notifier, ipcHandlers, updater, remoteDesktop;
 
 app.whenReady().then(async () => {
   console.log(`[NeuroChat] v${app.getVersion()} — iniciando`);
@@ -31,9 +31,11 @@ app.whenReady().then(async () => {
   discovery = require('./discovery');
   ipcHandlers = require('./ipcHandlers');
   updater = require('./updater');
+  remoteDesktop = require('./remoteDesktop');
 
   // Register all IPC handlers
   ipcHandlers.register();
+  remoteDesktop.init();
 
   // Initialize auto-updater (check on startup after 5s)
   updater.init();

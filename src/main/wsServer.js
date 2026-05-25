@@ -167,6 +167,15 @@ function handleIncoming(msg) {
     if (!msg.channelId) return;
     db.deleteChannel(msg.channelId);
     notifyRenderer('channel:synced', { id: msg.channelId, deleted: true });
+  } else if (
+    type === 'REMOTE_REQUEST' ||
+    type === 'REMOTE_ACCEPT' ||
+    type === 'REMOTE_REJECT' ||
+    type === 'REMOTE_SDP' ||
+    type === 'REMOTE_ICE' ||
+    type === 'REMOTE_END'
+  ) {
+    require('./remoteDesktop').handleSignaling(msg);
   }
 }
 

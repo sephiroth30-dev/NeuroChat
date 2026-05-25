@@ -472,6 +472,16 @@ async function openChat(chat) {
     chInfoBtn.onclick = null;
   }
 
+  // Show/hide remote support button (DM only)
+  const remoteBtn = $('remote-support-btn');
+  if (chat.type === 'dm') {
+    remoteBtn.classList.remove('hidden');
+    remoteBtn.onclick = () => startRemoteSession(chat.id, chat.name);
+  } else {
+    remoteBtn.classList.add('hidden');
+    remoteBtn.onclick = null;
+  }
+
   // Avatar header
   const avatarEl = $('chat-avatar');
   avatarEl.textContent = chat.name.charAt(0).toUpperCase();
@@ -1779,6 +1789,80 @@ function subscribeIPCEvents() {
   nc.on('file:error', data => {
     showToast(`Error en transferencia: ${data.message || ''}`, 'error');
   });
+
+  // ── Remote desktop events ─────────────────────────────────────────────────
+
+  nc.on('remote:incoming-request', msg => {
+    showRemoteRequestModal(msg);
+  });
+
+  nc.on('remote:session-accepted', () => {
+    showToast('Solicitud aceptada — abriendo sesión remota…', 'success');
+  });
+
+  nc.on('remote:session-rejected', () => {
+    showToast('El usuario rechazó la solicitud de soporte remoto.', 'error');
+  });
+
+  nc.on('remote:session-ended', () => {
+    showToast('Sesión remota terminada.', 'info');
+  });
+}
+
+// ── Remote desktop ────────────────────────────────────────────────────────────
+
+async function startRemoteSession(peerUuid, peerName) {
+  const peer = cachedUsers.find(u => u.uuid === peerUuid);
+  if (!peer || peer.isOnline === false) {
+    showToast(`${peerName} no está disponible para soporte remoto.`, 'error');
+    return;
+  }
+
+  const result = await nc.requestRemote(peerUuid);
+  if (!result?.ok) {
+    showToast('No se pudo enviar la solicitud de soporte remoto.', 'error');
+    return;
+  }
+  showToast(`Solicitud enviada a ${peerName}. Esperando respuesta…`, 'info');
+}
+
+function showRemoteRequestModal(msg) {
+  const { sessionId, fromUuid, fromName } = msg;
+  const overlay = $('modal-overlay');
+  const box = $('modal-box');
+
+  box.innerHTML = `
+    <div style="text-align:center;padding:8px 0">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4A9E8F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:12px">
+        <rect x="2" y="3" width="20" height="14" rx="2"/>
+        <path d="M8 21h8M12 17v4"/>
+        <path d="M9 9l2 2 4-4"/>
+      </svg>
+      <h2 style="margin-bottom:8px">Solicitud de soporte remoto</h2>
+      <p style="font-size:13px;color:var(--nc-text-2);margin-bottom:6px">
+        <strong>${escHtml(fromName)}</strong> quiere conectarse a tu pantalla<br>y controlar tu mouse y teclado.
+      </p>
+      <p style="font-size:11px;color:var(--nc-text-3);margin-bottom:20px">
+        Solo acepta si reconoces a esta persona y confías en ella.
+      </p>
+      <div class="actions">
+        <button class="btn btn-ghost" id="remote-reject-btn">Rechazar</button>
+        <button class="btn btn-primary" id="remote-accept-btn">Aceptar</button>
+      </div>
+    </div>`;
+
+  overlay.classList.remove('hidden');
+
+  $('remote-accept-btn').onclick = async () => {
+    overlay.classList.add('hidden');
+    await nc.acceptRemote(sessionId, fromUuid);
+    showToast(`Sesión remota iniciada con ${escHtml(fromName)}.`, 'success');
+  };
+
+  $('remote-reject-btn').onclick = async () => {
+    overlay.classList.add('hidden');
+    await nc.rejectRemote(sessionId, fromUuid);
+  };
 }
 
 // ── File send ─────────────────────────────────────────────────────────────────

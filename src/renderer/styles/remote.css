@@ -1,0 +1,207 @@
+/* ── Remote Desktop — Shared ───────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Host Widget ───────────────────────────────────────────────────────────── */
+
+.host-body {
+  background: #0f1f1f;
+  color: #cde8e2;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  user-select: none;
+  overflow: hidden;
+  -webkit-app-region: drag;
+}
+
+.host-widget {
+  padding: 14px 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.host-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #e0f5f0;
+}
+
+.rec-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e05a5a;
+  flex-shrink: 0;
+  animation: pulse-rec 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse-rec {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.host-peer { color: #9ccfc6; font-size: 12px; }
+.host-peer strong { color: #cde8e2; }
+
+.host-stats { color: #6aada3; font-size: 11px; }
+
+.end-btn {
+  -webkit-app-region: no-drag;
+  margin-top: 4px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: #c0392b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  align-self: flex-start;
+}
+.end-btn:hover { background: #e74c3c; }
+
+/* ── Viewer Window ─────────────────────────────────────────────────────────── */
+
+.viewer-body {
+  background: #0d0d0d;
+  margin: 0;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.video-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.remote-video {
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  cursor: none; /* hide local cursor — we're moving the remote one */
+  outline: none;
+}
+
+/* Connecting overlay */
+.connecting-overlay {
+  position: absolute;
+  inset: 0;
+  background: #0d0d0d;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: #8ab8b0;
+  font-size: 14px;
+}
+
+.connecting-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #1e3d38;
+  border-top-color: #4A9E8F;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.connecting-overlay strong { color: #cde8e2; }
+
+/* ── Toolbar ───────────────────────────────────────────────────────────────── */
+
+.viewer-toolbar {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(18, 28, 26, 0.92);
+  border: 1px solid rgba(74, 158, 143, 0.25);
+  border-radius: 10px;
+  padding: 7px 14px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  white-space: nowrap;
+}
+
+.viewer-toolbar.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tb-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #b8d8d3;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tb-btn:hover { background: rgba(74, 158, 143, 0.18); color: #e0f5f0; }
+.tb-btn svg { flex-shrink: 0; }
+
+.tb-end { color: #e07070; }
+.tb-end:hover { background: rgba(224, 90, 90, 0.18); color: #ff9999; }
+
+.tb-sep {
+  width: 1px;
+  height: 20px;
+  background: rgba(74, 158, 143, 0.25);
+  flex-shrink: 0;
+}
+
+.tb-quality-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #8ab8b0;
+  font-size: 12px;
+}
+
+.tb-select {
+  background: rgba(74, 158, 143, 0.12);
+  border: 1px solid rgba(74, 158, 143, 0.3);
+  color: #cde8e2;
+  font-size: 12px;
+  border-radius: 5px;
+  padding: 3px 6px;
+  cursor: pointer;
+  outline: none;
+}
+.tb-select:hover { border-color: rgba(74, 158, 143, 0.6); }
+
+.tb-stats {
+  color: #6aada3;
+  font-size: 11px;
+  min-width: 120px;
+  text-align: right;
+}
