@@ -1,7 +1,7 @@
 'use strict';
 
 const { autoUpdater } = require('electron-updater');
-const { BrowserWindow, app } = require('electron');
+const { BrowserWindow, shell, app, dialog } = require('electron');
 
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
@@ -140,14 +140,27 @@ function installUpdate() {
 
   exec(
     `rm -rf "${extractDir}" && mkdir -p "${extractDir}" && unzip -o "${downloadedFile}" -d "${extractDir}" && xattr -cr "${extractDir}"`,
-    err => {
+    async err => {
       if (err) {
-        require('electron').shell.showItemInFolder(downloadedFile);
-        setTimeout(() => app.quit(), 800);
+        console.error('[Updater] extract failed:', err.message);
+        shell.showItemInFolder(downloadedFile);
+        setTimeout(() => app.quit(), 2000);
         return;
       }
+
+      // Explain to the user what to do before the Finder windows open
+      await dialog.showMessageBox({
+        type: 'info',
+        title: 'NeuroChat — Actualización lista',
+        message: 'Nueva versión lista para instalar',
+        detail: 'Se abrirán dos ventanas del Finder:\n\n  • La carpeta con el nuevo NeuroChat.app\n  • La carpeta /Aplicaciones\n\nArrastra NeuroChat.app a /Aplicaciones para completar la actualización.',
+        buttons: ['Abrir Finder'],
+        defaultId: 0,
+      });
+
+      // Open the extracted folder and /Applications side-by-side for drag-and-drop
       exec(`open "${extractDir}" && open /Applications`, () => {
-        setTimeout(() => app.quit(), 800);
+        setTimeout(() => app.quit(), 3000);
       });
     }
   );
