@@ -40,7 +40,8 @@ function showConnectError(msg) {
 function startConnectTimeout() {
   connectTimer = setTimeout(() => {
     connectTimer = null;
-    showConnectError('No se pudo conectar con <strong>' + PEER_NAME + '</strong>.<br>El equipo remoto no respondió a tiempo.');
+    cleanup();
+    showConnectError('No se pudo conectar con <strong>' + PEER_NAME + '</strong>.<br>El equipo remoto no respondió a tiempo o el firewall bloqueó la conexión.');
     remoteViewer.endSession(SESSION_ID).catch(() => {});
   }, CONNECT_TIMEOUT_MS);
 }
@@ -103,11 +104,16 @@ async function init() {
     });
   };
 
-  // ICE connection failure → show error
+  // ICE connection failure → show error and notify host so it closes too
   pc.oniceconnectionstatechange = () => {
-    if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-      showConnectError('Conexión interrumpida con <strong>' + PEER_NAME + '</strong>.');
+    const state = pc.iceConnectionState;
+    if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+      const msg = state === 'failed'
+        ? 'No se pudo establecer conexión con <strong>' + PEER_NAME + '</strong>.<br>Verifica que ambos equipos estén en la misma red y sin firewall bloqueando.'
+        : 'Conexión interrumpida con <strong>' + PEER_NAME + '</strong>.';
+      showConnectError(msg);
       cleanup();
+      remoteViewer.endSession(SESSION_ID).catch(() => {});
     }
   };
 }

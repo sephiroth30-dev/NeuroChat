@@ -147,7 +147,16 @@ function _registerIPC() {
 
   // Relay WebRTC signaling (SDP + ICE) from a remote window to WS peer
   ipcMain.on('remote:sendSignaling', (_e, msg) => {
-    const peer = store.getOnlineUsers().find(u => u.uuid === msg.toUuid);
+    let peer = store.getOnlineUsers().find(u => u.uuid === msg.toUuid);
+    if (!peer) {
+      // Fallback: find the IP stored in the active session so signaling is never dropped
+      for (const s of sessions.values()) {
+        if (s.peerUuid === msg.toUuid && s.peerIp) {
+          peer = { uuid: msg.toUuid, ip: s.peerIp, wsPort: 45679 };
+          break;
+        }
+      }
+    }
     if (peer) wsClient.sendTo(peer, msg);
   });
 
@@ -191,6 +200,15 @@ function _createHostWindow(sessionId, peerName) {
 
   win._isRemoteHost = true;
   win._sessionId = sessionId;
+
+  // Buffer signaling until the renderer has loaded and registered its listener
+  _signalingQueue.set(sessionId, []);
+  win.webContents.once('did-finish-load', () => {
+    const pending = _signalingQueue.get(sessionId);
+    if (!pending) return;
+    _signalingQueue.delete(sessionId);
+    if (!win.isDestroyed()) pending.forEach(m => win.webContents.send('remote:signaling', m));
+  });
 
   // Intercept getDisplayMedia calls and automatically provide primary screen
   if (win.webContents.session.setDisplayMediaRequestHandler) {
@@ -324,6 +342,20 @@ function handleSignaling(msg) {
       _autoAccept(msg);
     } else {
       _notifyMainWindows('remote:incoming-request', msg);
+      // OS-level notification so the request is never missed
+      try {
+        const notifier = require('./notifier');
+        notifier.notify({
+          title: 'Solicitud de soporte remoto',
+          body: `${msg.fromName || 'Alguien'} quiere conectarse a tu pantalla`,
+          persistent: true,
+          onClick: () => {
+            BrowserWindow.getAllWindows()
+              .filter(w => !w.isDestroyed() && !w._isRemoteHost && !w._isRemoteViewer)
+              .forEach(w => { w.show(); w.focus(); });
+          },
+        });
+      } catch {}
     }
     return;
   }

@@ -8,6 +8,11 @@ if (!gotLock) {
   app.quit();
 }
 
+// WebRTC: disable mDNS candidate obfuscation so LAN peers can resolve ICE candidates.
+// Chromium hides local IPs with random .local hostnames by default; Windows/Linux
+// cannot resolve macOS mDNS names, breaking WebRTC on heterogeneous LANs.
+app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
+
 // Lazy-loaded modules (initialized after app ready)
 let windowManager, database, discovery, wsServer, fileTransfer, tray, _notifier, ipcHandlers, updater, remoteDesktop;
 
