@@ -12,18 +12,19 @@
   <body class="host-body">
     <div class="host-widget">
       <div class="host-header">
-        <span class="rec-dot"></span>
-        <span class="host-title">Sesión remota activa</span>
+        <span class="rec-dot" id="rec-dot"></span>
+        <span class="host-title" id="host-title">Capturando pantalla…</span>
       </div>
-      <div class="host-peer">Conectado con: <strong id="peer-name">—</strong></div>
-      <div class="host-stats">
+      <div class="host-peer" id="host-peer-line" style="display:none">Conectado con: <strong id="peer-name">—</strong></div>
+      <div class="host-notice" id="host-notice">Si aparece un diálogo del sistema, aprueba el uso compartido de pantalla.</div>
+      <div class="host-stats" id="host-stats" style="display:none">
         <span id="host-duration">0:00</span>
         &nbsp;·&nbsp;
         <span id="host-fps">— fps</span>
         &nbsp;·&nbsp;
         <span id="host-bitrate">—</span>
       </div>
-      <button id="end-btn" class="end-btn">Terminar sesión</button>
+      <button id="end-btn" class="end-btn">Cancelar</button>
     </div>
 
     <script src="remote-host.js"></script>

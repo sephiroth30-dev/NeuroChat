@@ -27,15 +27,24 @@ function init() {
 
 async function _checkScreenPermission() {
   if (process.platform !== 'darwin') return true;
-  const status = systemPreferences.getMediaAccessStatus('screen');
-  if (status === 'granted' || status === 'not-determined') return true;
 
-  // 'denied' or 'restricted' — inform the user and link to System Preferences
+  // Use getSources() as the authoritative check — getMediaAccessStatus('screen') is
+  // unreliable on macOS 14 Sonoma and may return 'not-determined' even when denied.
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 0, height: 0 },
+      fetchWindowIcons: false,
+    });
+    if (sources && sources.length > 0) return true;
+  } catch {}
+
+  // getSources() returned empty → screen recording permission is denied or restricted
   const { response } = await dialog.showMessageBox({
     type: 'warning',
     title: 'Permiso de pantalla requerido',
-    message: 'NeuroChat no tiene acceso a la pantalla',
-    detail: 'Ve a Configuración del Sistema → Privacidad y Seguridad → Grabación de pantalla y activa NeuroChat.\nDespués reinicia la aplicación e intenta de nuevo.',
+    message: 'NeuroChat no puede acceder a la pantalla',
+    detail: 'Ve a Configuración del Sistema → Privacidad y Seguridad → Grabación de pantalla,\nactiva NeuroChat y reinicia la aplicación.',
     buttons: ['Abrir Configuración', 'Cancelar'],
     defaultId: 0,
     cancelId: 1,

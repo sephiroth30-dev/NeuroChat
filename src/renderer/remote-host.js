@@ -27,10 +27,26 @@ document.getElementById('end-btn').onclick = async () => {
   window.close();
 };
 
+function _showSessionActive() {
+  document.getElementById('host-title').textContent = 'Sesión remota activa';
+  document.getElementById('rec-dot').style.display = '';
+  document.getElementById('host-notice').style.display = 'none';
+  document.getElementById('host-peer-line').style.display = '';
+  document.getElementById('host-stats').style.display = '';
+  document.getElementById('end-btn').textContent = 'Terminar sesión';
+}
+
 async function init() {
   let stream;
   try {
-    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
+    // 12-second timeout: on macOS 14 Sonoma, getDisplayMedia() can hang waiting
+    // for a screen-sharing consent dialog the user may not see.
+    stream = await Promise.race([
+      navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('getDisplayMedia timeout — no se recibió permiso en 12 s')), 12_000)
+      ),
+    ]);
     // macOS Screen Recording permission denied returns a stream with zero video tracks
     if (!stream.getVideoTracks().length) {
       stream.getTracks().forEach(t => t.stop());
@@ -44,7 +60,13 @@ async function init() {
     return;
   }
 
-  pc = new RTCPeerConnection({ iceServers: [] }); // LAN-only: no STUN needed
+  _showSessionActive();
+
+  // LAN-only. No STUN needed for same-subnet peers, but including it as fallback
+  // helps when the two machines are on different VLANs that still route to each other.
+  pc = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+  });
 
   // Add video track
   stream.getTracks().forEach(t => {
@@ -68,12 +90,17 @@ async function init() {
   // ICE candidates → relay to viewer via WS
   pc.onicecandidate = e => {
     if (!e.candidate) return;
+    console.log('[remote-host] ICE candidate:', e.candidate.candidate);
     remoteHost.sendSignaling({
       type: 'REMOTE_ICE',
       sessionId: SESSION_ID,
       toUuid: params.get('peerUuid') || '',
       candidate: e.candidate,
     });
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    console.log('[remote-host] ICE state:', pc.iceConnectionState);
   };
 
   // Create and send SDP offer

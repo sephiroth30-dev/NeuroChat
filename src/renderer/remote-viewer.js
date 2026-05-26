@@ -70,7 +70,9 @@ document.addEventListener('keydown', showToolbar);
 // ── WebRTC setup ──────────────────────────────────────────────────────────────
 
 async function init() {
-  pc = new RTCPeerConnection({ iceServers: [] }); // LAN-only: no STUN needed
+  pc = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+  });
 
   // Receive remote video track
   pc.ontrack = e => {
@@ -96,6 +98,7 @@ async function init() {
   // ICE candidates → relay to host via WS
   pc.onicecandidate = e => {
     if (!e.candidate) return;
+    console.log('[remote-viewer] ICE candidate:', e.candidate.candidate);
     remoteViewer.sendSignaling({
       type: 'REMOTE_ICE',
       sessionId: SESSION_ID,
