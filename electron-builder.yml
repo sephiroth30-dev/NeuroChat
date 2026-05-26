@@ -58,16 +58,12 @@ nsis:
 mac:
   target:
     - target: dmg
-      arch: x64
-    - target: dmg
-      arch: arm64
+      arch: universal
     - target: zip
-      arch: x64
-    - target: zip
-      arch: arm64
+      arch: universal
   icon: assets/icon.icns
   category: public.app-category.business
-  artifactName: NeuroChat-${version}-${arch}.${ext}
+  artifactName: NeuroChat-${version}.${ext}
   minimumSystemVersion: '10.15.0'
 
 dmg:

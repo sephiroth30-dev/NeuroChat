@@ -77,32 +77,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 3a. Build macOS Intel x64 — runner nativo Intel ────────────────────────
-  build-macos-x64:
-    needs: create-release
-    runs-on: macos-13
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Instalar dependencias
-        run: npm ci
-
-      - name: Compilar better-sqlite3 para Electron x64 (nativo Intel)
-        run: npx @electron/rebuild -f -w better-sqlite3
-
-      - name: Build macOS x64 DMG + ZIP
-        run: npx electron-builder --mac --arch x64 --publish onTagOrDraft
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ── 3b. Build macOS Apple Silicon arm64 — runner nativo arm64 ──────────────
-  build-macos-arm64:
+  # ── 3. Build macOS universal — fat binary manual con lipo ──────────────────
+  #
+  # electron-builder arch:universal no funciona con módulos nativos:
+  # produce only-arm64 en runners arm64. Solución: compilar arm64 (nativo),
+  # cross-compilar x64 con npm_config_arch + CFLAGS, unir con lipo y empaquetar
+  # con npmRebuild:false para que electron-builder no sobreescriba el fat binary.
+  build-macos:
     needs: create-release
     runs-on: macos-latest
     timeout-minutes: 30
@@ -117,17 +98,45 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Compilar better-sqlite3 para Electron arm64 (nativo Apple Silicon)
-        run: npx @electron/rebuild -f -w better-sqlite3
+      - name: Compilar better-sqlite3 para arm64 (nativo)
+        run: |
+          npx @electron/rebuild -f -w better-sqlite3 --arch=arm64
+          echo "→ arch arm64:"
+          file node_modules/better-sqlite3/build/Release/better_sqlite3.node
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node /tmp/bs3_arm64.node
 
-      - name: Build macOS arm64 DMG + ZIP
-        run: npx electron-builder --mac --arch arm64 --publish onTagOrDraft
+      - name: Cross-compilar better-sqlite3 para x64
+        env:
+          npm_config_arch: x64
+          npm_config_target_arch: x64
+          CFLAGS: "-arch x86_64"
+          CXXFLAGS: "-arch x86_64"
+          LDFLAGS: "-arch x86_64"
+        run: |
+          npx @electron/rebuild -f -w better-sqlite3 --arch=x64
+          echo "→ arch x64:"
+          file node_modules/better-sqlite3/build/Release/better_sqlite3.node
+          # Fallar si el resultado sigue siendo arm64
+          file node_modules/better-sqlite3/build/Release/better_sqlite3.node | grep -q x86_64 || \
+            { echo "ERROR: cross-compile x64 falló — sigue siendo arm64"; exit 1; }
+
+      - name: Crear fat binary universal con lipo
+        run: |
+          lipo -create \
+            /tmp/bs3_arm64.node \
+            node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+            -output node_modules/better-sqlite3/build/Release/better_sqlite3.node
+          echo "→ fat binary:"
+          lipo -info node_modules/better-sqlite3/build/Release/better_sqlite3.node
+
+      - name: Build macOS universal DMG + ZIP
+        run: npx electron-builder --mac --publish onTagOrDraft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── 4. Publicar release ─────────────────────────────────────────────────────
   publish-release:
-    needs: [create-release, build-windows, build-macos-x64, build-macos-arm64]
+    needs: [create-release, build-windows, build-macos]
     runs-on: ubuntu-latest
     steps:
       - name: Publicar release (quitar borrador)
