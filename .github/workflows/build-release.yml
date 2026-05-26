@@ -11,7 +11,7 @@ on:
       version:
         description: 'Versión a compilar y publicar (ej: 2.2.12)'
         required: true
-        default: '2.2.12'
+        default: '2.2.13'
 
 permissions:
   contents: write
