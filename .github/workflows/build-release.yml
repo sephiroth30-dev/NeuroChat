@@ -53,14 +53,15 @@ jobs:
         id: check
         run: |
           VERSION="v${{ steps.ver.outputs.version }}"
-          # workflow_dispatch fuerza siempre el build (para rebuildear si falló)
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # workflow_dispatch o releases/**: siempre compilar (rebuild forzado)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || \
+             [[ "${{ github.ref_name }}" == releases/* ]]; then
             echo "skip=false" >> $GITHUB_OUTPUT
-            echo "Build forzado por workflow_dispatch."
-          # Push a main o releases/**: solo compilar si el tag aún no existe
+            echo "Build requerido."
+          # Push a main: solo compilar si el tag aún no existe
           elif git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Tag $VERSION ya existe — nada que compilar."
+            echo "Tag $VERSION ya existe en main — nada que compilar."
           else
             echo "skip=false" >> $GITHUB_OUTPUT
             echo "Tag $VERSION no existe → arrancando build."
