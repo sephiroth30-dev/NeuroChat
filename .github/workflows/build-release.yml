@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versión a compilar y publicar (ej: 2.2.2)'
+        description: 'Versión a compilar y publicar (ej: 2.2.12)'
         required: true
-        default: '2.2.2'
+        default: '2.2.12'
 
 permissions:
   contents: write
@@ -20,6 +20,7 @@ jobs:
   # ── 1. Crear draft release ─────────────────────────────────────────────────
   create-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.ver.outputs.version }}
     steps:
@@ -42,12 +43,17 @@ jobs:
         run: |
           if gh release view "v${{ steps.ver.outputs.version }}" \
               --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "Release ya existe, se reutilizará."
+            echo "Release v${{ steps.ver.outputs.version }} ya existe, se reutilizará."
           else
             gh release create "v${{ steps.ver.outputs.version }}" \
               --repo "${{ github.repository }}" \
               --title "NeuroChat v${{ steps.ver.outputs.version }}" \
               --generate-notes \
+              --draft \
+            || gh release create "v${{ steps.ver.outputs.version }}" \
+              --repo "${{ github.repository }}" \
+              --title "NeuroChat v${{ steps.ver.outputs.version }}" \
+              --notes "Release v${{ steps.ver.outputs.version }}" \
               --draft
           fi
         env:
@@ -138,6 +144,7 @@ jobs:
   publish-release:
     needs: [create-release, build-windows, build-macos]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Publicar release (quitar borrador)
         run: |
