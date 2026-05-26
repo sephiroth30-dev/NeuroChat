@@ -32,8 +32,16 @@ async function init() {
   let stream;
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
+    // macOS Screen Recording permission denied returns a stream with zero video tracks
+    if (!stream.getVideoTracks().length) {
+      stream.getTracks().forEach(t => t.stop());
+      throw new Error('Sin acceso a la pantalla — permiso de Grabación de pantalla denegado.');
+    }
   } catch (err) {
     console.error('[remote-host] getDisplayMedia failed:', err);
+    // End session so the viewer does not hang at "connecting" indefinitely
+    await remoteHost.endSession(SESSION_ID).catch(() => {});
+    window.close();
     return;
   }
 

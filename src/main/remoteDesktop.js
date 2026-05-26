@@ -1,6 +1,6 @@
 'use strict';
 
-const { BrowserWindow, ipcMain, screen, desktopCapturer } = require('electron');
+const { BrowserWindow, ipcMain, screen, desktopCapturer, systemPreferences, dialog, shell } = require('electron');
 const path = require('path');
 const crypto = require('crypto');
 
@@ -17,6 +17,29 @@ function init() {
   store = require('./store');
   wsClient = require('./wsClient');
   _registerIPC();
+}
+
+// ── macOS screen recording permission guard ───────────────────────────────────
+
+async function _checkScreenPermission() {
+  if (process.platform !== 'darwin') return true;
+  const status = systemPreferences.getMediaAccessStatus('screen');
+  if (status === 'granted' || status === 'not-determined') return true;
+
+  // 'denied' or 'restricted' — inform the user and link to System Preferences
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    title: 'Permiso de pantalla requerido',
+    message: 'NeuroChat no tiene acceso a la pantalla',
+    detail: 'Ve a Configuración del Sistema → Privacidad y Seguridad → Grabación de pantalla y activa NeuroChat.\nDespués reinicia la aplicación e intenta de nuevo.',
+    buttons: ['Abrir Configuración', 'Cancelar'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response === 0) {
+    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+  }
+  return false;
 }
 
 // ── IPC Registration ──────────────────────────────────────────────────────────
@@ -50,9 +73,25 @@ function _registerIPC() {
   });
 
   // Host accepts incoming remote request
-  ipcMain.handle('remote:accept', (_e, { sessionId, fromUuid }) => {
+  ipcMain.handle('remote:accept', async (_e, { sessionId, fromUuid }) => {
     const peer = store.getOnlineUsers().find(u => u.uuid === fromUuid);
     if (!peer?.ip) return { ok: false, error: 'peer_offline' };
+
+    // macOS: verify screen recording permission before proceeding
+    const hasPermission = await _checkScreenPermission();
+    if (!hasPermission) {
+      const profile = db.getProfile();
+      if (profile) {
+        wsClient.sendTo(peer, {
+          type: 'REMOTE_REJECT',
+          sessionId,
+          fromUuid: profile.uuid,
+          toUuid: fromUuid,
+        });
+      }
+      sessions.delete(sessionId);
+      return { ok: false, error: 'permission_denied' };
+    }
 
     const profile = db.getProfile();
     const { width, height } = screen.getPrimaryDisplay().size;
@@ -157,6 +196,12 @@ function _createHostWindow(sessionId, peerName) {
           types: ['screen'],
           thumbnailSize: { width: 0, height: 0 },
         });
+        if (!sources?.length) {
+          // No screen sources — likely macOS Screen Recording permission denied.
+          // Passing an empty object causes getDisplayMedia() to reject cleanly.
+          callback({});
+          return;
+        }
         callback({ video: sources[0] });
       } catch {
         callback({});
@@ -389,13 +434,26 @@ function _mapMod(m) {
 
 // ── Auto-accept (domain trust) ────────────────────────────────────────────────
 
-function _autoAccept(msg) {
+async function _autoAccept(msg) {
   const { sessionId, fromUuid, fromName } = msg;
   const peer = store.getOnlineUsers().find(u => u.uuid === fromUuid);
   if (!peer?.ip) return;
 
   const profile = db.getProfile();
   if (!profile) return;
+
+  // macOS: verify screen recording permission before accepting
+  const hasPermission = await _checkScreenPermission();
+  if (!hasPermission) {
+    wsClient.sendTo(peer, {
+      type: 'REMOTE_REJECT',
+      sessionId,
+      fromUuid: profile.uuid,
+      toUuid: fromUuid,
+    });
+    return;
+  }
+
   const { width, height } = screen.getPrimaryDisplay().size;
 
   sessions.set(sessionId, {
