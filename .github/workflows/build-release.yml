@@ -1,53 +1,69 @@
 name: Build & Release
 
-# Dispara al hacer push de un tag v*.*.* (ej: v2.2.0)
-# O manualmente desde la UI de GitHub Actions → "Run workflow"
 on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+    branches:
+      - 'releases/**'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versión a compilar y publicar (ej: 2.2.0)'
+        description: 'Versión a compilar y publicar (ej: 2.2.12)'
         required: true
-        default: '2.2.0'
+        default: '2.2.12'
 
 permissions:
-  contents: write   # necesario para crear releases y subir assets
+  contents: write
 
 jobs:
-  # ── 1. Crear draft release en GitHub antes de que los builds suban assets ──
+  # ── 1. Crear draft release ─────────────────────────────────────────────────
   create-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolver versión (tag o input manual)
+      - name: Resolver versión
         id: ver
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+          else
+            BRANCH="${{ github.ref_name }}"
+            VERSION="${BRANCH#releases/v}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
           fi
 
-      - name: Crear draft release
+      - name: Crear draft release (idempotente)
         run: |
-          gh release create "v${{ steps.ver.outputs.version }}" \
-            --repo "${{ github.repository }}" \
-            --title "NeuroChat v${{ steps.ver.outputs.version }}" \
-            --generate-notes \
-            --draft
+          if gh release view "v${{ steps.ver.outputs.version }}" \
+              --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "Release v${{ steps.ver.outputs.version }} ya existe, se reutilizará."
+          else
+            gh release create "v${{ steps.ver.outputs.version }}" \
+              --repo "${{ github.repository }}" \
+              --title "NeuroChat v${{ steps.ver.outputs.version }}" \
+              --generate-notes \
+              --draft \
+            || gh release create "v${{ steps.ver.outputs.version }}" \
+              --repo "${{ github.repository }}" \
+              --title "NeuroChat v${{ steps.ver.outputs.version }}" \
+              --notes "Release v${{ steps.ver.outputs.version }}" \
+              --draft
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 2. Build Windows (.exe NSIS installer + latest.yml) ───────────────────
+  # ── 2. Build Windows ────────────────────────────────────────────────────────
   build-windows:
     needs: create-release
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -62,15 +78,21 @@ jobs:
       - name: Compilar módulos nativos para Electron (Windows x64)
         run: npx @electron/rebuild -f -w better-sqlite3,robotjs
 
-      - name: Build Windows NSIS + publicar en release draft
+      - name: Build Windows NSIS
         run: npx electron-builder --win --publish onTagOrDraft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 3. Build macOS (.dmg + .zip + latest-mac.yml) ────────────────────────
+  # ── 3. Build macOS universal — fat binary manual con lipo ──────────────────
+  #
+  # electron-builder arch:universal no funciona con módulos nativos:
+  # produce only-arm64 en runners arm64. Solución: compilar arm64 (nativo),
+  # cross-compilar x64 con npm_config_arch + CFLAGS, unir con lipo y empaquetar
+  # con npmRebuild:false para que electron-builder no sobreescriba el fat binary.
   build-macos:
     needs: create-release
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -82,22 +104,47 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Compilar módulos nativos para Electron (macOS)
-        # robotjs puede fallar en macOS sin permiso de accesibilidad (solo se
-        # necesita en hosts Windows). Si falla, compilar solo better-sqlite3.
+      - name: Compilar better-sqlite3 para arm64 (nativo)
         run: |
-          npx @electron/rebuild -f -w better-sqlite3,robotjs \
-            || npx @electron/rebuild -f -w better-sqlite3
+          npx @electron/rebuild -f -w better-sqlite3 --arch=arm64
+          echo "→ arch arm64:"
+          file node_modules/better-sqlite3/build/Release/better_sqlite3.node
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node /tmp/bs3_arm64.node
 
-      - name: Build macOS DMG + ZIP + publicar en release draft
+      - name: Cross-compilar better-sqlite3 para x64
+        env:
+          npm_config_arch: x64
+          npm_config_target_arch: x64
+          CFLAGS: "-arch x86_64"
+          CXXFLAGS: "-arch x86_64"
+          LDFLAGS: "-arch x86_64"
+        run: |
+          npx @electron/rebuild -f -w better-sqlite3 --arch=x64
+          echo "→ arch x64:"
+          file node_modules/better-sqlite3/build/Release/better_sqlite3.node
+          # Fallar si el resultado sigue siendo arm64
+          file node_modules/better-sqlite3/build/Release/better_sqlite3.node | grep -q x86_64 || \
+            { echo "ERROR: cross-compile x64 falló — sigue siendo arm64"; exit 1; }
+
+      - name: Crear fat binary universal con lipo
+        run: |
+          lipo -create \
+            /tmp/bs3_arm64.node \
+            node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+            -output node_modules/better-sqlite3/build/Release/better_sqlite3.node
+          echo "→ fat binary:"
+          lipo -info node_modules/better-sqlite3/build/Release/better_sqlite3.node
+
+      - name: Build macOS universal DMG + ZIP
         run: npx electron-builder --mac --publish onTagOrDraft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Publicar release (quitar borrador) cuando ambos builds terminen ────
+  # ── 4. Publicar release ─────────────────────────────────────────────────────
   publish-release:
     needs: [create-release, build-windows, build-macos]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Publicar release (quitar borrador)
         run: |
