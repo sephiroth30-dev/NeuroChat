@@ -1,23 +1,32 @@
 name: Build & Release
 
+# ──────────────────────────────────────────────────────────────────────────────
+# FLUJO PERMANENTE:
+#   1. Sube package.json con nueva versión a main
+#   2. Este workflow se dispara automáticamente
+#   3. Crea tag git + draft release en GitHub
+#   4. Compila Windows (x64) y macOS (universal Intel+Apple Silicon)
+#   5. Sube los artefactos al draft release
+#   6. Publica el release → electron-updater lo entrega a los usuarios
+# ──────────────────────────────────────────────────────────────────────────────
+
 on:
   push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
     branches:
-      - 'releases/**'
+      - main
+    paths:
+      - 'package.json'       # solo cuando cambia la versión
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versión a compilar y publicar (ej: 2.2.12)'
-        required: true
-        default: '2.2.13'
+        description: 'Versión a compilar (ej: 2.2.13) — vacío = leer de package.json'
+        required: false
 
 permissions:
   contents: write
 
 jobs:
-  # ── 1. Crear draft release ─────────────────────────────────────────────────
+  # ── 1. Crear tag git + draft release ────────────────────────────────────────
   create-release:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -25,35 +34,48 @@ jobs:
       version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Resolver versión
         id: ver
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ -n "${{ github.event.inputs.version }}" ]; then
             echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
           else
-            BRANCH="${{ github.ref_name }}"
-            VERSION="${BRANCH#releases/v}"
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
           fi
+
+      - name: Crear tag git si no existe
+        run: |
+          VERSION="v${{ steps.ver.outputs.version }}"
+          if git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
+            echo "Tag $VERSION ya existe."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$VERSION"
+            git push origin "$VERSION"
+            echo "Tag $VERSION creado y publicado."
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Crear draft release (idempotente)
         run: |
-          if gh release view "v${{ steps.ver.outputs.version }}" \
-              --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "Release v${{ steps.ver.outputs.version }} ya existe, se reutilizará."
+          VERSION="v${{ steps.ver.outputs.version }}"
+          if gh release view "$VERSION" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "Release $VERSION ya existe, se reutilizará."
           else
-            gh release create "v${{ steps.ver.outputs.version }}" \
+            gh release create "$VERSION" \
               --repo "${{ github.repository }}" \
-              --title "NeuroChat v${{ steps.ver.outputs.version }}" \
+              --title "NeuroChat $VERSION" \
               --generate-notes \
               --draft \
-            || gh release create "v${{ steps.ver.outputs.version }}" \
+            || gh release create "$VERSION" \
               --repo "${{ github.repository }}" \
-              --title "NeuroChat v${{ steps.ver.outputs.version }}" \
-              --notes "Release v${{ steps.ver.outputs.version }}" \
+              --title "NeuroChat $VERSION" \
+              --notes "Release $VERSION" \
               --draft
           fi
         env:
@@ -79,16 +101,17 @@ jobs:
         run: npx @electron/rebuild -f -w better-sqlite3,robotjs
 
       - name: Build Windows NSIS
-        run: npx electron-builder --win --publish onTagOrDraft
+        # --publish always: sube al draft release sin importar si es tag o no
+        run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 3. Build macOS universal — fat binary manual con lipo ──────────────────
+  # ── 3. Build macOS universal (Intel + Apple Silicon) ────────────────────────
   #
-  # electron-builder arch:universal no funciona con módulos nativos:
-  # produce only-arm64 en runners arm64. Solución: compilar arm64 (nativo),
-  # cross-compilar x64 con npm_config_arch + CFLAGS, unir con lipo y empaquetar
-  # con npmRebuild:false para que electron-builder no sobreescriba el fat binary.
+  # electron-builder arch:universal falla con módulos nativos en runners arm64.
+  # Solución: compilar arm64 nativamente, cross-compilar x64 con CFLAGS,
+  # unir con lipo, y usar npmRebuild:false para que electron-builder no
+  # sobreescriba el fat binary durante el empaquetado.
   build-macos:
     needs: create-release
     runs-on: macos-latest
@@ -122,7 +145,6 @@ jobs:
           npx @electron/rebuild -f -w better-sqlite3 --arch=x64
           echo "→ arch x64:"
           file node_modules/better-sqlite3/build/Release/better_sqlite3.node
-          # Fallar si el resultado sigue siendo arm64
           file node_modules/better-sqlite3/build/Release/better_sqlite3.node | grep -q x86_64 || \
             { echo "ERROR: cross-compile x64 falló — sigue siendo arm64"; exit 1; }
 
@@ -136,7 +158,8 @@ jobs:
           lipo -info node_modules/better-sqlite3/build/Release/better_sqlite3.node
 
       - name: Build macOS universal DMG + ZIP
-        run: npx electron-builder --mac --publish onTagOrDraft
+        # --publish always: sube al draft release sin importar si es tag o no
+        run: npx electron-builder --mac --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
