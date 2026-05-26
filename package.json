@@ -27,8 +27,10 @@
   "dependencies": {
     "better-sqlite3": "^9.4.3",
     "electron-updater": "^6.8.3",
-    "robotjs": "^0.6.0",
     "ws": "^8.16.0"
+  },
+  "optionalDependencies": {
+    "robotjs": "^0.6.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.6.0",

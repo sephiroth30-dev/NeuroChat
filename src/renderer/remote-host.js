@@ -28,7 +28,6 @@ document.getElementById('end-btn').onclick = async () => {
 };
 
 async function init() {
-  // Get screen stream via Electron's setDisplayMediaRequestHandler
   let stream;
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
@@ -78,8 +77,17 @@ async function init() {
   };
 
   // Create and send SDP offer
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
+  let offer;
+  try {
+    offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+  } catch (err) {
+    console.error('[remote-host] createOffer failed:', err);
+    await remoteHost.endSession(SESSION_ID).catch(() => {});
+    window.close();
+    return;
+  }
+
   remoteHost.sendSignaling({
     type: 'REMOTE_SDP',
     sessionId: SESSION_ID,
@@ -88,7 +96,6 @@ async function init() {
     sdpType: offer.type,
   });
 
-  // Start stats polling
   startTime = Date.now();
   statsInterval = setInterval(updateStats, 1000);
   setInterval(updateDuration, 1000);
