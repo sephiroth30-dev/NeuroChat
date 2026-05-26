@@ -1,25 +1,27 @@
 name: Build & Release
 
 # ──────────────────────────────────────────────────────────────────────────────
-# FLUJO PERMANENTE:
-#   1. Sube package.json con nueva versión a main
-#   2. Este workflow se dispara automáticamente
-#   3. Crea tag git + draft release en GitHub
-#   4. Compila Windows (x64) y macOS (universal Intel+Apple Silicon)
-#   5. Sube los artefactos al draft release
-#   6. Publica el release → electron-updater lo entrega a los usuarios
+# FLUJO PERMANENTE — CÓMO PUBLICAR UNA NUEVA VERSIÓN:
+#
+#   1. Edita package.json: cambia "version" a la nueva versión
+#   2. git add package.json && git commit -m "..." && git push origin main
+#   3. Este workflow detecta que el tag no existe → build automático
+#   4. Crea tag git + draft release, compila Win+Mac, publica
+#   5. electron-updater entrega la actualización a todos los usuarios
+#
+# No se necesita crear ramas releases/vX.Y.Z ni hacer nada más.
+# workflow_dispatch sirve para forzar un rebuild manual si algo falla.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
   push:
     branches:
       - main
-    paths:
-      - 'package.json'       # solo cuando cambia la versión
+      - 'releases/**'     # backup: rama de release manual
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versión a compilar (ej: 2.2.13) — vacío = leer de package.json'
+        description: 'Versión a compilar (vacío = leer de package.json)'
         required: false
 
 permissions:
@@ -32,6 +34,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       version: ${{ steps.ver.outputs.version }}
+      skip: ${{ steps.check.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,22 +49,39 @@ jobs:
             echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
           fi
 
-      - name: Crear tag git si no existe
+      - name: Decidir si hay que compilar
+        id: check
         run: |
           VERSION="v${{ steps.ver.outputs.version }}"
-          if git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
-            echo "Tag $VERSION ya existe."
+          # workflow_dispatch fuerza siempre el build (para rebuildear si falló)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Build forzado por workflow_dispatch."
+          # Push a main o releases/**: solo compilar si el tag aún no existe
+          elif git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Tag $VERSION ya existe — nada que compilar."
           else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Tag $VERSION no existe → arrancando build."
+          fi
+
+      - name: Crear tag git
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          VERSION="v${{ steps.ver.outputs.version }}"
+          if ! git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git tag "$VERSION"
             git push origin "$VERSION"
-            echo "Tag $VERSION creado y publicado."
+            echo "Tag $VERSION creado."
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Crear draft release (idempotente)
+        if: steps.check.outputs.skip == 'false'
         run: |
           VERSION="v${{ steps.ver.outputs.version }}"
           if gh release view "$VERSION" --repo "${{ github.repository }}" > /dev/null 2>&1; then
@@ -84,6 +104,7 @@ jobs:
   # ── 2. Build Windows ────────────────────────────────────────────────────────
   build-windows:
     needs: create-release
+    if: needs.create-release.outputs.skip == 'false'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -101,7 +122,8 @@ jobs:
         run: npx @electron/rebuild -f -w better-sqlite3,robotjs
 
       - name: Build Windows NSIS
-        # --publish always: sube al draft release sin importar si es tag o no
+        # --publish always: sube al draft release independientemente de si es
+        # un push de tag o de rama — soluciona el fallo histórico con onTagOrDraft
         run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -109,11 +131,12 @@ jobs:
   # ── 3. Build macOS universal (Intel + Apple Silicon) ────────────────────────
   #
   # electron-builder arch:universal falla con módulos nativos en runners arm64.
-  # Solución: compilar arm64 nativamente, cross-compilar x64 con CFLAGS,
-  # unir con lipo, y usar npmRebuild:false para que electron-builder no
+  # Solución manual: compilar arm64 nativo, cross-compilar x64 con CFLAGS,
+  # unir con lipo, y npmRebuild:false en electron-builder.yml para que no
   # sobreescriba el fat binary durante el empaquetado.
   build-macos:
     needs: create-release
+    if: needs.create-release.outputs.skip == 'false'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -158,7 +181,8 @@ jobs:
           lipo -info node_modules/better-sqlite3/build/Release/better_sqlite3.node
 
       - name: Build macOS universal DMG + ZIP
-        # --publish always: sube al draft release sin importar si es tag o no
+        # --publish always: sube al draft release independientemente de si es
+        # un push de tag o de rama — soluciona el fallo histórico con onTagOrDraft
         run: npx electron-builder --mac --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -166,6 +190,7 @@ jobs:
   # ── 4. Publicar release ─────────────────────────────────────────────────────
   publish-release:
     needs: [create-release, build-windows, build-macos]
+    if: needs.create-release.outputs.skip == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
