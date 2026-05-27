@@ -21,6 +21,10 @@ let currentQuality = 'auto';
 let statsInterval = null;
 let startTime = Date.now();
 
+// ICE candidates from viewer that arrive before setRemoteDescription(answer) completes
+let _pendingIce = [];
+let _remoteDescSet = false;
+
 document.getElementById('peer-name').textContent = PEER_NAME;
 document.getElementById('end-btn').onclick = async () => {
   await remoteHost.endSession(SESSION_ID);
@@ -154,8 +158,17 @@ remoteHost.on('remote:signaling', async msg => {
   try {
     if (msg.type === 'REMOTE_SDP' && msg.sdpType === 'answer') {
       await pc.setRemoteDescription({ type: msg.sdpType, sdp: msg.sdp });
+      _remoteDescSet = true;
+      for (const c of _pendingIce) {
+        await pc.addIceCandidate(c).catch(e => console.warn('[remote-host] pending ICE error:', e.message));
+      }
+      _pendingIce = [];
     } else if (msg.type === 'REMOTE_ICE' && msg.candidate) {
-      await pc.addIceCandidate(msg.candidate);
+      if (!_remoteDescSet) {
+        _pendingIce.push(msg.candidate);
+      } else {
+        await pc.addIceCandidate(msg.candidate);
+      }
     }
   } catch (err) {
     console.warn('[remote-host] signaling error:', err.message);

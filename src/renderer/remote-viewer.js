@@ -21,6 +21,10 @@ let toolbarTimer = null;
 let connectTimer = null;
 let inputEnabled = false;
 
+// ICE candidates that arrive before setRemoteDescription completes are buffered here
+let _pendingIce = [];
+let _remoteDescSet = false;
+
 const CONNECT_TIMEOUT_MS = 30_000;
 
 // ── Connecting overlay helpers ────────────────────────────────────────────────
@@ -128,6 +132,12 @@ remoteViewer.on('remote:signaling', async msg => {
     if (msg.type === 'REMOTE_SDP' && msg.sdpType === 'offer') {
       if (!pc) await init();
       await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp });
+      _remoteDescSet = true;
+      // Flush any ICE candidates that arrived before remote description was ready
+      for (const c of _pendingIce) {
+        await pc.addIceCandidate(c).catch(e => console.warn('[remote-viewer] pending ICE error:', e.message));
+      }
+      _pendingIce = [];
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       remoteViewer.sendSignaling({
@@ -138,7 +148,11 @@ remoteViewer.on('remote:signaling', async msg => {
         sdpType: answer.type,
       });
     } else if (msg.type === 'REMOTE_ICE' && msg.candidate) {
-      if (pc) await pc.addIceCandidate(msg.candidate);
+      if (!_remoteDescSet) {
+        _pendingIce.push(msg.candidate);
+      } else if (pc) {
+        await pc.addIceCandidate(msg.candidate);
+      }
     }
   } catch (err) {
     console.warn('[remote-viewer] signaling error:', err.message);
