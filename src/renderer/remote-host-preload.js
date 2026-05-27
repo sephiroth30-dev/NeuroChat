@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('remoteHost', {
   // Send input event received from DataChannel to main process → robotjs
   executeInput: ev => ipcRenderer.send('remote:executeInput', ev),
 
+  // Get available screen sources (main process → desktopCapturer)
+  getScreenSources: () => ipcRenderer.invoke('remote:getScreenSources'),
+
   // End this session
   endSession: sessionId => ipcRenderer.invoke('remote:end', { sessionId }),
 

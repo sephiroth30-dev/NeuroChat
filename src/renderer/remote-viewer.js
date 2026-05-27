@@ -148,7 +148,17 @@ remoteViewer.on('remote:signaling', async msg => {
 
 remoteViewer.on('remote:session-ended', () => {
   cleanup();
-  window.close();
+  if (inputEnabled) {
+    // Was fully connected — peer ended the session normally
+    window.close();
+  } else {
+    // Ended before video arrived — likely a permission or capture error on the host
+    showConnectError(
+      'El equipo remoto no pudo iniciar la sesión.<br>' +
+      'Si es un Mac, verifica que tiene permiso de <strong>Grabación de pantalla</strong> ' +
+      'en Configuración del Sistema → Privacidad y Seguridad, y reinicia NeuroChat.'
+    );
+  }
 });
 
 // ── Input capture & forwarding ────────────────────────────────────────────────

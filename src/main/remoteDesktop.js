@@ -219,27 +219,6 @@ function _createHostWindow(sessionId, peerName) {
     if (!win.isDestroyed()) pending.forEach(m => win.webContents.send('remote:signaling', m));
   });
 
-  // Intercept getDisplayMedia calls and automatically provide primary screen
-  if (win.webContents.session.setDisplayMediaRequestHandler) {
-    win.webContents.session.setDisplayMediaRequestHandler(async (_req, callback) => {
-      try {
-        const sources = await desktopCapturer.getSources({
-          types: ['screen'],
-          thumbnailSize: { width: 0, height: 0 },
-        });
-        if (!sources?.length) {
-          // No screen sources — likely macOS Screen Recording permission denied.
-          // Passing an empty object causes getDisplayMedia() to reject cleanly.
-          callback({});
-          return;
-        }
-        callback({ video: sources[0] });
-      } catch {
-        callback({});
-      }
-    });
-  }
-
   const session = sessions.get(sessionId);
   const profile = db?.getProfile();
   win.loadFile(path.join(__dirname, '../renderer/remote-host.html'), {

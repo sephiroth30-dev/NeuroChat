@@ -37,24 +37,43 @@ function _showSessionActive() {
 }
 
 async function init() {
+  // Step 1: get screen source IDs via IPC (main process runs desktopCapturer, which
+  // carries the macOS Screen Recording permission check — no OS picker dialog needed).
+  let sources;
+  try {
+    sources = await remoteHost.getScreenSources();
+  } catch (err) {
+    console.error('[remote-host] getScreenSources failed:', err);
+    sources = [];
+  }
+
+  if (!sources?.length) {
+    console.error('[remote-host] No screen sources — Screen Recording permission denied');
+    await remoteHost.endSession(SESSION_ID).catch(() => {});
+    window.close();
+    return;
+  }
+
+  // Step 2: capture stream using the source ID directly — avoids getDisplayMedia()
+  // which can trigger the macOS system picker or hang on Sonoma.
   let stream;
   try {
-    // 12-second timeout: on macOS 14 Sonoma, getDisplayMedia() can hang waiting
-    // for a screen-sharing consent dialog the user may not see.
-    stream = await Promise.race([
-      navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('getDisplayMedia timeout — no se recibió permiso en 12 s')), 12_000)
-      ),
-    ]);
-    // macOS Screen Recording permission denied returns a stream with zero video tracks
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: sources[0].id,
+          maxFrameRate: 30,
+        },
+      },
+      audio: false,
+    });
     if (!stream.getVideoTracks().length) {
       stream.getTracks().forEach(t => t.stop());
-      throw new Error('Sin acceso a la pantalla — permiso de Grabación de pantalla denegado.');
+      throw new Error('getUserMedia: sin tracks de vídeo en el stream.');
     }
   } catch (err) {
-    console.error('[remote-host] getDisplayMedia failed:', err);
-    // End session so the viewer does not hang at "connecting" indefinitely
+    console.error('[remote-host] getUserMedia failed:', err);
     await remoteHost.endSession(SESSION_ID).catch(() => {});
     window.close();
     return;
