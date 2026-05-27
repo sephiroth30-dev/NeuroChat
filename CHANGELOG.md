@@ -5,6 +5,20 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.17] — 2026-05-27 — Fix race condition ICE candidates en soporte remoto
+
+### Corregido
+
+- **Race condition WebRTC (conexión remota fallaba)**: el `_signalingQueue` de `remoteDesktop.js` acumula todos los mensajes de señalización mientras la ventana carga y los envía en ráfaga en `did-finish-load`. Los handlers `async` del renderer se interleavan: `addIceCandidate` podía ejecutarse antes de que `setRemoteDescription` resolviera, produciendo `InvalidStateError` y cortando la sesión antes de que llegara el vídeo.
+- **Fix (viewer)**: buffer `_pendingIce` + flag `_remoteDescSet` en `remote-viewer.js`. Los ICE candidates recibidos antes de que se establezca el remote description se encolan y se aplican en orden inmediatamente después de que `setRemoteDescription` resuelva.
+- **Fix (host)**: mismo mecanismo en `remote-host.js` para cuando el viewer envía su answer + ICE candidates simultáneamente.
+
+### Modificado
+- `src/renderer/remote-viewer.js` — buffer `_pendingIce`, flag `_remoteDescSet`.
+- `src/renderer/remote-host.js` — buffer `_pendingIce`, flag `_remoteDescSet`.
+
+---
+
 ## [2.2.4] — 2026-05-25 — Correcciones sesión remota + macOS Gatekeeper
 
 ### Corregido — Sesión remota
