@@ -628,3 +628,120 @@
   .msg-row.outgoing .audio-wave { color: rgba(233,237,239,0.7); }
   .msg-row.outgoing .audio-dur { color: rgba(233,237,239,0.55); }
 }
+
+/* ─── Clickable links in messages ────────────────────────────────────────── */
+.msg-link {
+  color: var(--nc-primary);
+  text-decoration: underline;
+  cursor: pointer;
+  word-break: break-all;
+}
+.msg-link:hover {
+  color: var(--nc-primary-dk);
+}
+.msg-row.outgoing .msg-link {
+  color: var(--nc-primary-dk);
+}
+
+/* ─── File preview panel (WhatsApp-style attach preview) ─────────────────── */
+.file-preview-panel {
+  margin-bottom: 8px;
+  background: var(--nc-input-bg);
+  border: 1px solid var(--nc-border);
+  border-radius: var(--nc-radius);
+  overflow: hidden;
+  animation: fp-slide-in 0.15s ease;
+}
+@keyframes fp-slide-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fp-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+.fp-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--nc-radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--nc-primary) 10%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fp-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.fp-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+.fp-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fp-name {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fp-size {
+  font-size: 11px;
+  color: var(--nc-text-2);
+}
+.fp-cancel-btn {
+  flex-shrink: 0;
+}
+
+/* ─── Image bubble download button ───────────────────────────────────────── */
+.img-bubble {
+  position: relative;
+}
+.img-bubble .file-download-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  opacity: 0;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s;
+}
+.img-bubble:hover .file-download-btn {
+  opacity: 1;
+}
+
+/* ─── Drag-over highlight ────────────────────────────────────────────────── */
+#chat-view.drag-over .message-list::after {
+  content: 'Suelta para adjuntar';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--nc-primary);
+  background: color-mix(in srgb, var(--nc-primary) 8%, transparent);
+  border: 2px dashed var(--nc-primary);
+  border-radius: var(--nc-radius);
+  pointer-events: none;
+}

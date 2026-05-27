@@ -214,6 +214,20 @@
 
           <!-- Message input area -->
           <div class="input-area">
+            <!-- File preview panel (WhatsApp-style, shown before sending) -->
+            <div id="file-preview-panel" class="file-preview-panel hidden">
+              <div class="fp-body">
+                <div id="fp-thumb" class="fp-thumb"></div>
+                <div class="fp-meta">
+                  <span class="fp-name" id="fp-name"></span>
+                  <span class="fp-size" id="fp-size"></span>
+                </div>
+                <button class="icon-btn fp-cancel-btn" id="fp-cancel-btn" title="Cancelar adjunto">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </div>
+
             <!-- Reply preview -->
             <div id="reply-preview" class="reply-preview hidden">
               <div class="reply-preview-content">

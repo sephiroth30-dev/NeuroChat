@@ -5,6 +5,38 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.18] — 2026-05-27 — Links clickables · Preview de archivos · Descarga · Remote desktop
+
+### Corregido — Escritorio remoto
+- **Sin STUN externo**: eliminado `stun.l.google.com` de ambos renderers. Solo se usan candidatos `host` (IP LAN directa), que es lo correcto para una app corporativa sin dependencia de internet.
+- **`disconnected` ya no termina la sesión**: el estado `disconnected` es transitorio en WebRTC (puede recuperarse); solo `failed` cierra la sesión ahora.
+
+### Nuevo — Links en mensajes
+- Las URLs en mensajes (http://, https://, www.) se renderizan como **links clickables** que abren el navegador del sistema con `shell.openExternal`. Ejemplo: `www.easystem.co` o `https://easystem.co`.
+
+### Nuevo — Preview de archivos al adjuntar (estilo WhatsApp)
+- Al adjuntar un archivo (botón 📎 o arrastrar), se muestra un **panel de preview** sobre el área de entrada con el thumbnail (si es imagen) o ícono + nombre + tamaño.
+- El campo de texto cambia su placeholder a "Agregar descripción…" para incluir una descripción opcional.
+- El botón Enviar manda el archivo y, si hay texto, lo envía como mensaje de texto a continuación.
+- Botón ✕ en el panel cancela el adjunto sin enviarlo.
+- Área de drag-and-drop muestra resaltado visual al arrastrar archivos.
+
+### Mejorado — Descarga de archivos recibidos
+- Botón de descarga ↓ ahora aparece en **todos** los archivos recibidos (sin límite de 30 MB).
+- En imágenes el botón aparece flotante sobre la miniatura al hacer hover.
+- Un solo click en el botón descarga el archivo a la carpeta Downloads del usuario.
+
+### Modificado
+- `src/renderer/remote-viewer.js` — `iceServers: []`, solo `failed` termina sesión.
+- `src/renderer/remote-host.js` — `iceServers: []`.
+- `src/renderer/app.js` — `formatText` URL detection, panel de preview, `_sendFileNow`, `makeFileRow` mejorado.
+- `src/renderer/index.html` — `#file-preview-panel` HTML.
+- `src/renderer/styles/chat.css` — estilos de links, panel, drag-over, descarga en imágenes.
+- `src/main/preload.js` — `openUrl` IPC expose.
+- `src/main/ipcHandlers.js` — handler `url:open` con `shell.openExternal`.
+
+---
+
 ## [2.2.17] — 2026-05-27 — Fix race condition ICE candidates en soporte remoto
 
 ### Corregido

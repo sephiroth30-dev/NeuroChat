@@ -255,6 +255,10 @@ function register() {
   ipcMain.handle('file:accept', (_e, transferId) => fileTransfer.accept(transferId));
   ipcMain.handle('file:reject', (_e, transferId) => fileTransfer.reject(transferId));
   ipcMain.handle('file:open', (_e, localPath) => shell.openPath(localPath));
+  ipcMain.handle('url:open', (_e, url) => {
+    const full = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    return shell.openExternal(full);
+  });
 
   ipcMain.handle('file:download', async (_e, srcPath) => {
     const fs = require('fs');

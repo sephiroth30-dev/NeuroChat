@@ -129,4 +129,7 @@ contextBridge.exposeInMainWorld('neurochat', {
   // App info
   getVersion: () => ipcRenderer.invoke('app:version'),
   getNetworkInfo: () => ipcRenderer.invoke('app:networkInfo'),
+
+  // Open URL in system browser
+  openUrl: url => ipcRenderer.invoke('url:open', url),
 });

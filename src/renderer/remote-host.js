@@ -85,11 +85,7 @@ async function init() {
 
   _showSessionActive();
 
-  // LAN-only. No STUN needed for same-subnet peers, but including it as fallback
-  // helps when the two machines are on different VLANs that still route to each other.
-  pc = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-  });
+  pc = new RTCPeerConnection({ iceServers: [] }); // LAN-only: host candidates, no STUN
 
   // Add video track
   stream.getTracks().forEach(t => {

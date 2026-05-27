@@ -649,19 +649,21 @@ function makeFileRow(row, msg, isOutgoing) {
   const isImage = mimeType.startsWith('image/');
   const safeLocal = localPath ? fileUrlFromPath(localPath) : '';
 
+  const downloadBtn = localPath
+    ? `<button class="file-download-btn" title="Guardar copia" data-path="${escHtml(localPath)}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 3v13M5 14l7 7 7-7"/><path d="M3 21h18"/></svg>
+       </button>`
+    : '';
+
   let inner;
   if (isImage && localPath) {
     inner = `
       <div class="img-bubble">
-        <img src="${safeLocal}" alt="${escHtml(name)}" />
+        <img src="${safeLocal}" alt="${escHtml(name)}" loading="lazy" />
+        ${downloadBtn}
       </div>`;
   } else {
     const icon = getFileIcon(mimeType);
-    const downloadBtn = localPath && size <= 30 * 1024 * 1024
-      ? `<button class="file-download-btn" title="Abrir / guardar" data-path="${escHtml(localPath)}">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 3v13M5 14l7 7 7-7"/><path d="M3 21h18"/></svg>
-         </button>`
-      : '';
     inner = `
       <div class="file-bubble${localPath ? ' has-file' : ''}" data-transfer="${escHtml(meta.transferId || '')}">
         <div class="file-icon">${icon}</div>
@@ -699,9 +701,11 @@ function makeFileRow(row, msg, isOutgoing) {
       nc.openFile(localPath);
     });
   }
-  row.querySelector('.file-download-btn')?.addEventListener('click', async e => {
-    e.stopPropagation();
-    await nc.downloadFile(e.currentTarget.dataset.path);
+  row.querySelectorAll('.file-download-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      await nc.downloadFile(e.currentTarget.dataset.path);
+    });
   });
   row.addEventListener('contextmenu', e => {
     e.preventDefault();
@@ -1458,6 +1462,15 @@ document.addEventListener('click', e => {
   }
 });
 
+// ── Link click handler (delegated on messages container) ─────────────────────
+document.getElementById('messages-inner').addEventListener('click', e => {
+  const link = e.target.closest('.msg-link');
+  if (!link) return;
+  e.preventDefault();
+  const url = link.dataset.url || '';
+  if (url) nc.openUrl(url);
+});
+
 // ── Bind UI events ────────────────────────────────────────────────────────────
 function bindEvents() {
   // Send on Enter (Shift+Enter = newline)
@@ -1477,7 +1490,15 @@ function bindEvents() {
     typingTimer = setTimeout(() => {}, 2000);
   });
 
-  $('send-btn').onclick = sendMessage;
+  $('send-btn').onclick = () => {
+    if (_pendingFile) {
+      const caption = $('message-input').textContent.trim();
+      _sendFileNow(_pendingFile, caption);
+      hideFilePreviewPanel();
+    } else {
+      sendMessage();
+    }
+  };
 
   // Voice recording
   let _mediaRecorder = null;
@@ -1599,7 +1620,7 @@ function bindEvents() {
   $('attach-btn').onclick = () => $('file-input').click();
   $('file-input').addEventListener('change', e => {
     const file = e.target.files[0];
-    if (file) sendFile(file);
+    if (file) showFilePreviewPanel(file);
     e.target.value = '';
   });
 
@@ -1607,12 +1628,18 @@ function bindEvents() {
   const chatView = $('chat-view');
   chatView.addEventListener('dragover', e => {
     e.preventDefault();
+    chatView.classList.add('drag-over');
   });
+  chatView.addEventListener('dragleave', () => chatView.classList.remove('drag-over'));
   chatView.addEventListener('drop', e => {
     e.preventDefault();
+    chatView.classList.remove('drag-over');
     const file = e.dataTransfer.files[0];
-    if (file) sendFile(file);
+    if (file) showFilePreviewPanel(file);
   });
+
+  // File preview panel cancel button
+  $('fp-cancel-btn').onclick = () => hideFilePreviewPanel();
 
   // Settings button
   $('settings-btn').onclick = () => openSettings();
@@ -1883,8 +1910,48 @@ function showRemoteRequestModal(msg) {
 }
 
 // ── File send ─────────────────────────────────────────────────────────────────
-async function sendFile(file) {
+let _pendingFile = null;
+
+function showFilePreviewPanel(file) {
+  if (!currentChat) { showToast('Selecciona un chat primero.', 'warning'); return; }
+  if (file.size > 500 * 1024 * 1024) { showToast('El archivo supera el límite de 500 MB.', 'error'); return; }
+  _pendingFile = file;
+
+  const panel = $('file-preview-panel');
+  const thumbEl = $('fp-thumb');
+  $('fp-name').textContent = file.name;
+  $('fp-size').textContent = formatSize(file.size);
+
+  thumbEl.innerHTML = '';
+  if (file.type.startsWith('image/')) {
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(file);
+    img.onload = () => URL.revokeObjectURL(img.src);
+    thumbEl.appendChild(img);
+  } else {
+    thumbEl.innerHTML = `<span class="fp-icon">${getFileIcon(file.type)}</span>`;
+  }
+
+  const input = $('message-input');
+  input.dataset.origPlaceholder = input.dataset.placeholder || '';
+  input.dataset.placeholder = 'Agregar descripción…';
+  panel.classList.remove('hidden');
+}
+
+function hideFilePreviewPanel() {
+  _pendingFile = null;
+  $('file-preview-panel').classList.add('hidden');
+  const input = $('message-input');
+  if (input.dataset.origPlaceholder !== undefined) {
+    input.dataset.placeholder = input.dataset.origPlaceholder;
+  }
+}
+
+async function _sendFileNow(file, caption) {
   if (!currentChat) return;
+  if (caption) {
+    $('message-input').textContent = '';
+  }
   await nc.sendFile({
     filePath: file.path,
     name: file.name,
@@ -1893,7 +1960,16 @@ async function sendFile(file) {
     chatId: currentChat.id,
     chatType: currentChat.type,
   });
-  await loadMessages(); // show the file bubble immediately
+  if (caption) {
+    await nc.sendMessage({
+      content: caption,
+      type: 'text',
+      channelId: currentChat.type === 'channel' ? currentChat.id : null,
+      toUuid: currentChat.type === 'dm' ? currentChat.id : null,
+      replyTo: null,
+    });
+  }
+  await loadMessages();
 }
 
 function showFileOfferDialog(offer) {
@@ -2329,10 +2405,20 @@ function getInitials(name) {
 }
 
 function formatText(text) {
-  return escHtml(text)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/_(.+?)_/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code>$1</code>');
+  const URL_RE = /(https?:\/\/[^\s<>"'()]+|www\.[a-zA-Z0-9.-]+[^\s<>"'()]*)/g;
+  const parts = text.split(URL_RE);
+  return parts
+    .map((part, i) => {
+      if (i % 2 === 1) {
+        const safe = escHtml(part);
+        return `<span class="msg-link" data-url="${safe}">${safe}</span>`;
+      }
+      return escHtml(part)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/_(.+?)_/g, '<em>$1</em>')
+        .replace(/`(.+?)`/g, '<code>$1</code>');
+    })
+    .join('');
 }
 
 function formatTime(ts) {

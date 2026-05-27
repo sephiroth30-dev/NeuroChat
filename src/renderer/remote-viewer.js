@@ -74,9 +74,7 @@ document.addEventListener('keydown', showToolbar);
 // ── WebRTC setup ──────────────────────────────────────────────────────────────
 
 async function init() {
-  pc = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-  });
+  pc = new RTCPeerConnection({ iceServers: [] }); // LAN-only: host candidates only, no STUN needed
 
   // Receive remote video track
   pc.ontrack = e => {
@@ -111,14 +109,15 @@ async function init() {
     });
   };
 
-  // ICE connection failure → show error and notify host so it closes too
+  // ICE connection state — only end on 'failed'; 'disconnected' can be transient
   pc.oniceconnectionstatechange = () => {
     const state = pc.iceConnectionState;
-    if (state === 'failed' || state === 'disconnected' || state === 'closed') {
-      const msg = state === 'failed'
-        ? 'No se pudo establecer conexión con <strong>' + PEER_NAME + '</strong>.<br>Verifica que ambos equipos estén en la misma red y sin firewall bloqueando.'
-        : 'Conexión interrumpida con <strong>' + PEER_NAME + '</strong>.';
-      showConnectError(msg);
+    console.log('[remote-viewer] ICE state:', state);
+    if (state === 'failed') {
+      showConnectError(
+        'No se pudo establecer conexión con <strong>' + PEER_NAME + '</strong>.<br>' +
+        'Verifica que ambos equipos estén en la misma red LAN y sin firewall bloqueando.'
+      );
       cleanup();
       remoteViewer.endSession(SESSION_ID).catch(() => {});
     }
