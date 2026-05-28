@@ -5,6 +5,70 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.20] — 2026-05-28 — Soporte remoto: ICE restart + TURN + servidor de signaling para internet
+
+### Corregido — Escritorio remoto (fiabilidad ICE)
+
+**Problema raíz para LAN**: el timer de conexión (30 s) sólo se limpiaba en `video.onloadedmetadata`. Si ICE conectaba pero el vídeo tardaba más de ese tiempo, el timer mataba la sesión.
+
+**Cambios en `remote-viewer.js`:**
+- **Timer de conexión aumentado a 45 s** para redes con múltiples interfaces.
+- **Nuevo `videoTimer`**: cuando ICE alcanza `connected/completed`, el timer principal se cancela y se inicia un timer secundario de 12 s esperando el vídeo. Si el vídeo no llega en esos 12 s se muestra el error específico de captura de pantalla.
+- **`video.oncanplay` como fallback** de `onloadedmetadata` — en algunos casos el evento de metadatos llega después del primer frame.
+- **ICE restart en `disconnected`**: tras 3 s en `disconnected` se llama `pc.restartIce()` automáticamente (como hace Chrome/RustDesk).
+- **Mensajes de error mejorados**: distintos textos para ICE failed vs vídeo sin llegar vs timeout, con tip de Firewall de Windows.
+
+**Cambios en `remote-host.js`:**
+- ICE restart automático en `disconnected` (3 s) y en `failed` (reintentar una vez).
+- STUN de Cloudflare (`stun.cloudflare.com:3478`) añadido a ambos renderers para mejor cobertura.
+- `bundlePolicy: 'max-bundle'` + `rtcpMuxPolicy: 'require'` reducen el número de comprobaciones ICE necesarias.
+- `iceCandidatePoolSize: 6` (era 4) para gathering más rápido.
+
+### Nuevo — ICE servers configurables (TURN desde settings)
+- Nuevo IPC handler `remote:getIceServers` que devuelve STUN + TURN si hay credenciales guardadas en settings (`turnUrl`, `turnUsername`, `turnCredential`).
+- Ambos preloads exponen `getIceServers()` via contextBridge.
+- Ambos renderers llaman `getIceServers()` al inicializar — permiten TURN sin recompilar.
+
+### Nuevo — Servidor de signaling para soporte remoto por internet (`server/`)
+
+Investigación exhaustiva de RustDesk/AnyDesk confirmó que su mecanismo es equivalente a WebRTC ICE + STUN + TURN. Para que NeuroChat funcione sin IP pública en ninguno de los dos lados se añade:
+
+**`server/signaling.js`** — servidor de encuentro (equivalente a `hbbs` de RustDesk):
+- Node.js WebSocket, puerto 8765.
+- Host solicita un código de 9 dígitos (ej. `472819563`).
+- Viewer ingresa el código → el servidor intercambia SDP offer/answer e ICE candidates.
+- Sala expira a los 30 minutos.
+- Genera credenciales TURN HMAC-SHA1 con TTL=1h si está configurado `TURN_SECRET`.
+- Desplegar en cualquier VPS (4-6 EUR/mes, Contabo/Hetzner).
+
+**`server/coturn.conf`** — configuración de coturn lista para copiar:
+- Autenticación por `use-auth-secret` (HMAC, sin credenciales en texto plano).
+- Rango de puertos relay `49152-65535`.
+- Bloqueo de IPs privadas para seguridad.
+- Soporte TLS opcional (Let's Encrypt).
+
+### Por qué RustDesk/AnyDesk funcionan sin IP pública
+
+Ambos usan **UDP hole punching** a través de un servidor rendezvous:
+1. Host y viewer se conectan al servidor público → el servidor ve sus IPs NAT-mapeadas.
+2. Servidor dice a cada uno la IP:puerto del otro.
+3. Ambos envían UDP simultáneamente → sus NATs abren un "agujero".
+4. La conexión P2P directa se establece sin IP pública.
+5. Fallback a relay (hbbr/TURN) cuando hay Symmetric NAT (~20% de casos).
+
+WebRTC ICE hace exactamente lo mismo, solo que estándar. La arquitectura de NeuroChat ya era correcta; lo que faltaba era el servidor de signaling público y el TURN.
+
+### Archivos modificados
+- `src/renderer/remote-viewer.js` — ICE restart, videoTimer, error messages mejorados, `getIceServers()`.
+- `src/renderer/remote-host.js` — ICE restart, Cloudflare STUN, `getIceServers()`.
+- `src/renderer/remote-viewer-preload.js` — expose `getIceServers`.
+- `src/renderer/remote-host-preload.js` — expose `getIceServers`.
+- `src/main/remoteDesktop.js` — handler `remote:getIceServers` IPC.
+- `server/signaling.js` — servidor de signaling para internet (nuevo).
+- `server/coturn.conf` — plantilla de configuración coturn (nuevo).
+
+---
+
 ## [2.2.19] — 2026-05-28 — Fix root cause ICE: restaurar STUN + logs de diagnóstico
 
 ### Corregido — Escritorio remoto (Fase 1 del plan definitivo)

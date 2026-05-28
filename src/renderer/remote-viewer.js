@@ -19,19 +19,26 @@ let dc = null;
 let statsInterval = null;
 let toolbarTimer = null;
 let connectTimer = null;
+let videoTimer = null;    // secondary timer: video must arrive after ICE connects
+let iceRestartTimer = null;
 let inputEnabled = false;
+let iceConnected = false;
 
 // ICE candidates that arrive before setRemoteDescription completes are buffered here
 let _pendingIce = [];
 let _remoteDescSet = false;
 
-const CONNECT_TIMEOUT_MS = 30_000;
+const CONNECT_TIMEOUT_MS  = 45_000;  // 45 s to get ICE + video
+const VIDEO_WAIT_AFTER_ICE = 12_000; // extra grace once ICE is 'connected'
 
 // ── Connecting overlay helpers ────────────────────────────────────────────────
 
 function showConnectError(msg) {
   clearTimeout(connectTimer);
+  clearTimeout(videoTimer);
+  clearTimeout(iceRestartTimer);
   connectTimer = null;
+  videoTimer   = null;
   const spinner = document.getElementById('overlay-spinner');
   const msgEl   = document.getElementById('overlay-msg');
   if (spinner) spinner.style.display = 'none';
@@ -41,11 +48,20 @@ function showConnectError(msg) {
   if (btn) btn.textContent = 'Cerrar';
 }
 
+function setOverlayStatus(text) {
+  const msgEl = document.getElementById('overlay-msg');
+  if (msgEl && !msgEl.style.color) msgEl.textContent = text;
+}
+
 function startConnectTimeout() {
   connectTimer = setTimeout(() => {
     connectTimer = null;
     cleanup();
-    showConnectError('No se pudo conectar con <strong>' + PEER_NAME + '</strong>.<br>El equipo remoto no respondió a tiempo o el firewall bloqueó la conexión.');
+    showConnectError(
+      'No se pudo conectar con <strong>' + PEER_NAME + '</strong>.<br>' +
+      'El equipo remoto no respondió a tiempo o el firewall bloqueó la conexión UDP.<br>' +
+      '<small style="opacity:.7">Tip: en Windows, permite NeuroChat en el Firewall de Windows Defender.</small>'
+    );
     remoteViewer.endSession(SESSION_ID).catch(() => {});
   }, CONNECT_TIMEOUT_MS);
 }
@@ -54,6 +70,8 @@ function startConnectTimeout() {
 
 document.getElementById('cancel-connect-btn').addEventListener('click', async () => {
   clearTimeout(connectTimer);
+  clearTimeout(videoTimer);
+  clearTimeout(iceRestartTimer);
   connectTimer = null;
   cleanup();
   await remoteViewer.endSession(SESSION_ID).catch(() => {});
@@ -74,27 +92,38 @@ document.addEventListener('keydown', showToolbar);
 // ── WebRTC setup ──────────────────────────────────────────────────────────────
 
 async function init() {
+  const iceServers = await remoteViewer.getIceServers().catch(() => [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+  ]);
+
   pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-    ],
-    iceCandidatePoolSize: 4,
+    iceServers,
+    iceCandidatePoolSize: 6,
     iceTransportPolicy: 'all',
+    bundlePolicy: 'max-bundle',
+    rtcpMuxPolicy: 'require',
   });
 
   // Receive remote video track
   pc.ontrack = e => {
     if (e.track.kind === 'video') {
       video.srcObject = e.streams[0];
-      video.onloadedmetadata = () => {
+
+      const _activateVideo = () => {
         clearTimeout(connectTimer);
+        clearTimeout(videoTimer);
         connectTimer = null;
+        videoTimer   = null;
         overlay.style.display = 'none';
         inputEnabled = true;
         video.play().catch(() => {});
         startStats();
       };
+
+      video.onloadedmetadata = _activateVideo;
+      video.oncanplay        = _activateVideo;  // fallback if metadata fires late
     }
   };
 
@@ -124,16 +153,52 @@ async function init() {
     });
   };
 
-  // ICE connection state — only end on 'failed'; 'disconnected' can be transient
   pc.oniceconnectionstatechange = () => {
     const state = pc.iceConnectionState;
     console.log('[remote-viewer] ICE state:', state);
-    if (state === 'failed') {
+
+    if (state === 'connected' || state === 'completed') {
+      iceConnected = true;
+      clearTimeout(iceRestartTimer);
+      iceRestartTimer = null;
+      setOverlayStatus('ICE conectado — esperando vídeo…');
+
+      // Give extra time for the video track to arrive and render after ICE connects
+      if (connectTimer) {
+        clearTimeout(connectTimer);
+        connectTimer = null;
+        videoTimer = setTimeout(() => {
+          videoTimer = null;
+          if (!inputEnabled) {
+            cleanup();
+            showConnectError(
+              'ICE establecido pero el vídeo no llegó desde <strong>' + PEER_NAME + '</strong>.<br>' +
+              'Puede que el equipo remoto no tenga permiso de captura de pantalla.<br>' +
+              '<small style="opacity:.7">En macOS: Sistema → Privacidad → Grabación de pantalla → activar NeuroChat.</small>'
+            );
+            remoteViewer.endSession(SESSION_ID).catch(() => {});
+          }
+        }, VIDEO_WAIT_AFTER_ICE);
+      }
+
+    } else if (state === 'disconnected') {
+      // Transient — attempt ICE restart after 3 s
+      clearTimeout(iceRestartTimer);
+      iceRestartTimer = setTimeout(() => {
+        if (pc && pc.iceConnectionState === 'disconnected') {
+          console.log('[remote-viewer] ICE restart after disconnected');
+          try { pc.restartIce(); } catch {}
+        }
+      }, 3000);
+
+    } else if (state === 'failed') {
+      clearTimeout(iceRestartTimer);
+      cleanup();
       showConnectError(
         'No se pudo establecer conexión con <strong>' + PEER_NAME + '</strong>.<br>' +
-        'Verifica que ambos equipos estén en la misma red LAN y sin firewall bloqueando.'
+        'ICE falló — ambos equipos deben estar en la misma LAN o necesitas un servidor TURN.<br>' +
+        '<small style="opacity:.7">Tip: comprueba que el Firewall de Windows permite el tráfico UDP de NeuroChat.</small>'
       );
-      cleanup();
       remoteViewer.endSession(SESSION_ID).catch(() => {});
     }
   };
@@ -175,6 +240,7 @@ remoteViewer.on('remote:signaling', async msg => {
 });
 
 remoteViewer.on('remote:session-ended', () => {
+  clearTimeout(iceRestartTimer);
   cleanup();
   if (inputEnabled) {
     // Was fully connected — peer ended the session normally
@@ -256,6 +322,8 @@ document.getElementById('quality-select').addEventListener('change', e => {
 
 document.getElementById('end-btn').addEventListener('click', async () => {
   clearTimeout(connectTimer);
+  clearTimeout(videoTimer);
+  clearTimeout(iceRestartTimer);
   cleanup();
   await remoteViewer.endSession(SESSION_ID);
   window.close();
@@ -293,6 +361,8 @@ function startStats() {
 function cleanup() {
   clearInterval(statsInterval);
   clearTimeout(toolbarTimer);
+  clearTimeout(iceRestartTimer);
+  iceRestartTimer = null;
   if (dc) { try { dc.close(); } catch {} }
   if (pc) { try { pc.close(); } catch {} }
 }

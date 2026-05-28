@@ -19,6 +19,7 @@ let dc = null; // DataChannel (receives input from viewer)
 let videoSender = null;
 let currentQuality = 'auto';
 let statsInterval = null;
+let iceRestartTimer = null;
 let startTime = Date.now();
 
 // ICE candidates from viewer that arrive before setRemoteDescription(answer) completes
@@ -85,16 +86,18 @@ async function init() {
 
   _showSessionActive();
 
-  // STUN servers permiten descubrir la IP reflexiva en LAN con múltiples interfaces
-  // (WiFi + Ethernet + VPN adapters). iceCandidatePoolSize acelera gathering.
-  // TURN se añadirá en Fase 2 cuando se tenga el servidor propio.
+  const iceServers = await remoteHost.getIceServers().catch(() => [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+  ]);
+
   pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-    ],
-    iceCandidatePoolSize: 4,
+    iceServers,
+    iceCandidatePoolSize: 6,
     iceTransportPolicy: 'all',
+    bundlePolicy: 'max-bundle',
+    rtcpMuxPolicy: 'require',
   });
 
   // Add video track
@@ -129,7 +132,29 @@ async function init() {
   };
 
   pc.oniceconnectionstatechange = () => {
-    console.log('[remote-host] ICE state:', pc.iceConnectionState);
+    const state = pc.iceConnectionState;
+    console.log('[remote-host] ICE state:', state);
+
+    if (state === 'connected' || state === 'completed') {
+      clearTimeout(iceRestartTimer);
+      iceRestartTimer = null;
+
+    } else if (state === 'disconnected') {
+      // Transient disconnect — attempt ICE restart after 3 s before giving up
+      clearTimeout(iceRestartTimer);
+      iceRestartTimer = setTimeout(() => {
+        if (pc && pc.iceConnectionState === 'disconnected') {
+          console.log('[remote-host] ICE restart after disconnected');
+          try { pc.restartIce(); } catch {}
+        }
+      }, 3000);
+
+    } else if (state === 'failed') {
+      console.error('[remote-host] ICE failed — attempting restart');
+      clearTimeout(iceRestartTimer);
+      // One automatic restart attempt; if it fails again, viewer will handle cleanup
+      try { pc.restartIce(); } catch {}
+    }
   };
 
   pc.onicegatheringstatechange = () => {
@@ -239,6 +264,8 @@ function updateDuration() {
 
 function cleanup() {
   clearInterval(statsInterval);
+  clearTimeout(iceRestartTimer);
+  iceRestartTimer = null;
   if (dc) { try { dc.close(); } catch {} }
   if (pc) { try { pc.close(); } catch {} }
 }

@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('remoteHost', {
   // Get available screen sources (main process → desktopCapturer)
   getScreenSources: () => ipcRenderer.invoke('remote:getScreenSources'),
 
+  // Get ICE server list (includes TURN if configured in settings)
+  getIceServers: () => ipcRenderer.invoke('remote:getIceServers'),
+
   // End this session
   endSession: sessionId => ipcRenderer.invoke('remote:end', { sessionId }),
 

@@ -169,6 +169,24 @@ function _registerIPC() {
     if (peer) wsClient.sendTo(peer, msg);
   });
 
+  // Return ICE server configuration (STUN + optional TURN from settings)
+  ipcMain.handle('remote:getIceServers', () => {
+    const settings = db.getAllSettings ? db.getAllSettings() : {};
+    const servers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' },
+    ];
+    if (settings.turnUrl && settings.turnUsername && settings.turnCredential) {
+      servers.push({
+        urls: settings.turnUrl,
+        username: settings.turnUsername,
+        credential: settings.turnCredential,
+      });
+    }
+    return servers;
+  });
+
   // Get available screen capture sources (for host window)
   ipcMain.handle('remote:getScreenSources', async () => {
     try {
