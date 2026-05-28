@@ -5,6 +5,26 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.19] — 2026-05-28 — Fix root cause ICE: restaurar STUN + logs de diagnóstico
+
+### Corregido — Escritorio remoto (Fase 1 del plan definitivo)
+
+**Root cause confirmado por investigación exhaustiva:** `iceServers: []` era la causa principal de que ICE se quedara en `checking`. Sin STUN, WebRTC solo genera candidatos `host` (IP directa de la interfaz). Esto falla cuando:
+- El equipo tiene múltiples interfaces (WiFi + Ethernet + VPN adapter) → candidatos inválidos saturan ICE
+- Hay NAT interno en la red corporativa
+- Windows Firewall bloquea el puerto UDP efímero elegido
+
+**Cambios:**
+- Restaurados STUN servers (`stun.l.google.com:19302` y `stun1.l.google.com:19302`) en ambos renderers
+- Añadido `iceCandidatePoolSize: 4` para acelerar el gathering de candidatos
+- Añadido `iceTransportPolicy: 'all'` para intentar directo primero, relay después
+- Añadidos logs de `onicegatheringstatechange` y `onconnectionstatechange` para diagnóstico en producción
+
+### Próximo paso (Fase 2): servidor TURN propio
+Para soporte por internet y redes corporativas con Symmetric NAT, se desplegará coturn en un VPS. Pendiente confirmación de infraestructura disponible.
+
+---
+
 ## [2.2.18] — 2026-05-27 — Links clickables · Preview de archivos · Descarga · Remote desktop
 
 ### Corregido — Escritorio remoto

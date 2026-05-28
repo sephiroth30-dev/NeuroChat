@@ -85,7 +85,17 @@ async function init() {
 
   _showSessionActive();
 
-  pc = new RTCPeerConnection({ iceServers: [] }); // LAN-only: host candidates, no STUN
+  // STUN servers permiten descubrir la IP reflexiva en LAN con múltiples interfaces
+  // (WiFi + Ethernet + VPN adapters). iceCandidatePoolSize acelera gathering.
+  // TURN se añadirá en Fase 2 cuando se tenga el servidor propio.
+  pc = new RTCPeerConnection({
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+    ],
+    iceCandidatePoolSize: 4,
+    iceTransportPolicy: 'all',
+  });
 
   // Add video track
   stream.getTracks().forEach(t => {
@@ -120,6 +130,15 @@ async function init() {
 
   pc.oniceconnectionstatechange = () => {
     console.log('[remote-host] ICE state:', pc.iceConnectionState);
+  };
+
+  pc.onicegatheringstatechange = () => {
+    console.log('[remote-host] ICE gathering:', pc.iceGatheringState);
+  };
+
+  pc.onconnectionstatechange = () => {
+    console.log('[remote-host] connection state:', pc.connectionState);
+    if (pc.connectionState === 'connected') _showSessionActive();
   };
 
   // Create and send SDP offer

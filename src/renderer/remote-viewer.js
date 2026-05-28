@@ -74,7 +74,14 @@ document.addEventListener('keydown', showToolbar);
 // ── WebRTC setup ──────────────────────────────────────────────────────────────
 
 async function init() {
-  pc = new RTCPeerConnection({ iceServers: [] }); // LAN-only: host candidates only, no STUN needed
+  pc = new RTCPeerConnection({
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+    ],
+    iceCandidatePoolSize: 4,
+    iceTransportPolicy: 'all',
+  });
 
   // Receive remote video track
   pc.ontrack = e => {
@@ -95,6 +102,14 @@ async function init() {
   pc.ondatachannel = e => {
     dc = e.channel;
     dc.onopen = () => console.log('[remote-viewer] DataChannel open');
+  };
+
+  pc.onicegatheringstatechange = () => {
+    console.log('[remote-viewer] ICE gathering:', pc.iceGatheringState);
+  };
+
+  pc.onconnectionstatechange = () => {
+    console.log('[remote-viewer] connection state:', pc.connectionState);
   };
 
   // ICE candidates → relay to host via WS
