@@ -1972,8 +1972,15 @@ function showFilePreviewPanel(file) {
   thumbEl.innerHTML = '';
   if (file.type.startsWith('image/')) {
     const img = document.createElement('img');
-    img.src = URL.createObjectURL(file._blob || file);
-    img.onload = () => URL.revokeObjectURL(img.src);
+    if (file.path) {
+      // Prefer file:// URL from disk (reliable in Electron for both picker and clipboard)
+      img.src = fileUrlFromPath(file.path);
+    } else {
+      // Fallback for blobs without a disk path
+      const blobUrl = URL.createObjectURL(file._blob || file);
+      img.src = blobUrl;
+      img.onload = () => URL.revokeObjectURL(blobUrl);
+    }
     thumbEl.appendChild(img);
   } else {
     thumbEl.innerHTML = `<span class="fp-icon">${getFileIcon(file.type)}</span>`;

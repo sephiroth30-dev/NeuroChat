@@ -702,8 +702,8 @@
   padding: 10px 12px;
 }
 .fp-thumb {
-  width: 52px;
-  height: 52px;
+  width: 72px;
+  height: 72px;
   border-radius: var(--nc-radius-sm);
   overflow: hidden;
   flex-shrink: 0;
@@ -716,6 +716,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 .fp-icon {
   font-size: 24px;
