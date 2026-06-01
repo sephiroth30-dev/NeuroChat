@@ -5,6 +5,60 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.21] — 2026-06-01 — Soporte remoto: corrección definitiva de 5 bugs críticos (race condition + timer leak + ICE serialización)
+
+### Corregido — Escritorio remoto (bugs críticos confirmados por auditoría)
+
+**Auditoría exhaustiva de 7 ángulos** reveló 5 bugs críticos que impedían la conexión incluso en LAN.
+
+#### Bug 1: Race condition de doble inicialización (ROOT CAUSE principal)
+
+**Síntoma**: la conexión remota nunca completaba — el vídeo nunca llegaba.
+
+**Causa**: `init()` se llamaba al arrancar el viewer Y desde el handler de signaling (`if (!pc) await init()`). Durante la llamada async `getIceServers()` (IPC ~5-50ms), el main process recibía `did-finish-load` y enviaba la oferta SDP. El handler veía `pc === null` y lanzaba una SEGUNDA `init()` concurrente. Si la primera terminaba después, sobreescribía `pc` con una conexión nueva sin descripción remota → la sesión moría silenciosamente.
+
+**Fix**: eliminada la llamada a `init()` en el arranque. Introducido mutex `ensureInit()` / `_initPromise` — por muchos llamadores concurrentes que haya, `_createPC()` se ejecuta exactamente una vez. La inicialización es lazy: sólo ocurre al llegar la oferta.
+
+#### Bug 2: Timer leak por doble disparo de eventos de vídeo
+
+**Síntoma**: tras una sesión exitosa, CPU/memoria aumentaban con el tiempo.
+
+**Causa**: `_activateVideo` asignada a `video.onloadedmetadata` Y `video.oncanplay`. Ambos eventos disparan en condiciones normales → `startStats()` llamada dos veces → dos `setInterval` creados. Sólo el último se guardaba en `statsInterval`; el primero corría para siempre.
+
+**Fix**: flag `_videoActivated` garantiza que `_activateVideo` ejecute como máximo una vez por sesión. `startStats()` llama `clearInterval(statsInterval)` antes de crear el nuevo intervalo.
+
+#### Bug 3: `pc.restartIce()` silencioso sin handler `onnegotiationneeded`
+
+**Síntoma**: ICE restart no funcionaba; la sesión se cortaba sin intento de recuperación.
+
+**Causa**: versiones anteriores llamaban `pc.restartIce()` en `disconnected`/`failed`. `restartIce()` dispara el evento `negotiationneeded`, pero no había handler → el restart se ignoraba silenciosamente.
+
+**Fix en host**: añadido `pc.onnegotiationneeded` con guard `!_remoteDescSet` (evita ejecutarse en la oferta inicial). Crea y envía nueva oferta cuando ICE necesita reiniciarse.
+**Fix en viewer**: en `failed`, llama `_endWithError()` (termina limpiamente) en lugar del restart roto.
+
+#### Bug 4: `pc` no se nullifica en `cleanup()`
+
+**Síntoma**: después de cerrar una sesión, `oniceconnectionstatechange` podía disparar sobre la conexión cerrada, iniciando nuevos timers o estados inconsistentes.
+
+**Causa**: `cleanup()` llamaba `pc.close()` pero dejaba `pc` apuntando al objeto cerrado.
+
+**Fix**: `pc = null`, `dc = null`, `_stream = null` inmediatamente después de `.close()` en ambos renderers.
+
+#### Bug 5: Serialización incorrecta de candidatos ICE via IPC
+
+**Síntoma**: en algunos sistemas los candidatos ICE llegaban incompletos o vacíos al peer.
+
+**Causa**: el objeto `RTCIceCandidate` (DOM object) se pasaba directamente a `ipcRenderer.send()`. Structured Clone no garantiza serializar todas sus propiedades en todas las plataformas.
+
+**Fix**: `e.candidate.toJSON()` en ambos host y viewer antes de enviar por IPC — produce un objeto JS plano con propiedades garantizadas.
+
+### Cambios en archivos
+
+- **`src/renderer/remote-viewer.js`**: reescritura completa — mutex `ensureInit()`, guard `_videoActivated`, `.toJSON()` ICE, `pc = null` post-close, `_initPromise = null` en cleanup
+- **`src/renderer/remote-host.js`**: reescritura completa — `_stream` module-level (evita GC), `.toJSON()` ICE, `onnegotiationneeded` handler, `pc/dc/_stream = null` post-close
+
+---
+
 ## [2.2.20] — 2026-05-28 — Soporte remoto: ICE restart + TURN + servidor de signaling para internet
 
 ### Corregido — Escritorio remoto (fiabilidad ICE)
