@@ -1,7 +1,10 @@
 'use strict';
 
-const { BrowserWindow, app, nativeTheme } = require('electron');
+const { BrowserWindow, Menu, app, nativeTheme } = require('electron');
 const path = require('path');
+
+// Remove the native menu bar (File, Edit, View, Window, Help) entirely
+Menu.setApplicationMenu(null);
 
 let mainWindow = null;
 let isQuitting = false;
@@ -19,6 +22,7 @@ function createMainWindow() {
     title: 'NeuroChat',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0E1621' : '#F4F6F8',
     show: false,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

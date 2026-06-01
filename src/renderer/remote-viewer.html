@@ -19,11 +19,19 @@
       <div id="connecting-overlay" class="connecting-overlay">
         <div class="connecting-spinner" id="overlay-spinner"></div>
         <p id="overlay-msg">Conectando con <strong id="overlay-peer-name"></strong>…</p>
-        <button id="cancel-connect-btn" class="overlay-cancel-btn">Cancelar</button>
+        <div class="overlay-actions">
+          <button id="overlay-hide-btn" class="overlay-hide-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Ocultar
+          </button>
+          <button id="cancel-connect-btn" class="overlay-cancel-btn">Cancelar</button>
+        </div>
       </div>
     </div>
 
-    <!-- Floating toolbar (auto-hides) -->
+    <!-- Floating toolbar (auto-hides on mouse-out) -->
     <div id="toolbar" class="viewer-toolbar">
       <button id="end-btn" class="tb-btn tb-end" title="Terminar sesión">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -47,7 +55,16 @@
 
       <div class="tb-sep"></div>
 
-      <button id="hide-btn" class="tb-btn" title="Minimizar ventana">
+      <button id="fs-btn" class="tb-btn" title="Pantalla completa / Escala adaptativa">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
+        </svg>
+        Escala
+      </button>
+
+      <div class="tb-sep"></div>
+
+      <button id="hide-btn" class="tb-btn" title="Minimizar ventana (la sesión sigue activa)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="5" y1="12" x2="19" y2="12"/>
         </svg>

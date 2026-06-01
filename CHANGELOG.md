@@ -5,6 +5,49 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.23] — 2026-06-01 — Ocultar durante conexión + cursor fluido + Escala + ocultar menú + banner update
+
+### Corregido — Botón "Ocultar" visible durante la fase de conexión remota
+
+**Problema**: mientras la ventana mostraba el overlay de "Conectando…", sólo había un botón "Cancelar". Para minimizar había que arrastrar la ventana manualmente.
+
+**Fix**: añadido botón "Ocultar" (azul) en el overlay de conexión junto al botón Cancelar. Llama a `remoteViewer.minimizeWindow()` igual que el botón de la barra. La sesión sigue activa mientras la ventana está minimizada.
+
+### Corregido — Cursor "pegado" / movimientos lentos en escritorio remoto
+
+**Causa**: el evento `mousemove` del navegador puede disparar hasta 250 veces por segundo. Sin throttling, cada evento generaba: `DataChannel → IPC → robotjs.moveMouse()`. robotjs encola los movimientos y el cursor aparece con lag respecto al ratón real.
+
+**Fix**: throttle de 30 ms en el handler `mousemove` del viewer (≤33 eventos/s). Los eventos de clic, rueda y teclado NO se limitan — sólo el movimiento.
+
+### Corregido — Restaurado botón "Escala" (pantalla completa adaptativa) en viewer
+
+Se restauró el botón de pantalla completa que fue eliminado por error en v2.2.22. Ahora se llama "Escala" y tiene doble función:
+- Si la ventana no está en pantalla completa: maximiza en pantalla completa (el vídeo ocupa toda la pantalla preservando la proporción, `object-fit: contain`).
+- Si ya está en pantalla completa: sale del modo pantalla completa.
+
+La barra flotante ahora tiene: **Terminar · Calidad · Escala · Ocultar · Stats**.
+
+### Nuevo — Menú nativo oculto (File, Edit, View, Window, Help)
+
+`Menu.setApplicationMenu(null)` elimina la barra de menú nativa de Electron en todas las plataformas. Se añade también `autoHideMenuBar: true` como respaldo para Windows.
+
+### Corregido — Banner de actualización tapa el campo de escritura
+
+**Problema**: el banner de actualización tenía `position: fixed; bottom: 0; z-index: 9999`, superponiéndose al área de entrada de texto.
+
+**Fix**: el banner ahora es parte del flujo de layout flex (`body { display: flex; flex-direction: column }`). Cuando aparece, empuja el shell de la app hacia arriba en lugar de superponerse. Cuando está oculto (`display: none`), el app ocupa el 100% de la altura.
+
+### Corregido — Instalador NSIS: evitar versiones múltiples en Windows
+
+**Problema**: sin un GUID fijo, cada versión se registraba como aplicación diferente en Windows → múltiples entradas en "Agregar/Quitar Programas" → actualizaciones bloqueadas.
+
+**Cambios en `electron-builder.yml`**:
+- `nsis.guid` fijo: garantiza que el instalador reemplace siempre la versión anterior en lugar de coexistir.
+- `nsis.oneClick: false`: el instalador muestra progreso y permite al usuario confirmar — evita que se aborte silenciosamente.
+- Eliminada referencia a `installer-script.nsh` (el archivo no existía → el build fallaba con error NSIS).
+
+---
+
 ## [2.2.22] — 2026-06-01 — Botón "Ocultar" en viewer remoto + pegar capturas de pantalla en chat
 
 ### Nuevo — Botón "Ocultar" en la ventana de visualización remota

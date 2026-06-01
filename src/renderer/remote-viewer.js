@@ -183,7 +183,11 @@ function startConnectTimeout() {
   }, 45_000);
 }
 
-// ── Cancel button ─────────────────────────────────────────────────────────────
+// ── Overlay buttons (connecting phase) ───────────────────────────────────────
+
+document.getElementById('overlay-hide-btn').addEventListener('click', () => {
+  remoteViewer.minimizeWindow();
+});
 
 document.getElementById('cancel-connect-btn').addEventListener('click', async () => {
   clearTimeout(connectTimer);
@@ -267,8 +271,14 @@ function sendInput(ev) {
   try { dc.send(JSON.stringify(ev)); } catch {}
 }
 
+// Throttle mousemove to ≤33fps — prevents robotjs backlog on the host that
+// makes the cursor feel "sticky" when mouse events arrive faster than they can be executed.
+let _lastMouseMove = 0;
 video.addEventListener('mousemove', e => {
   if (!inputEnabled) return;
+  const now = Date.now();
+  if (now - _lastMouseMove < 30) return;
+  _lastMouseMove = now;
   const r = video.getBoundingClientRect();
   sendInput({ type: 'mousemove', x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height });
 });
@@ -330,6 +340,14 @@ document.getElementById('end-btn').addEventListener('click', async () => {
   cleanup();
   await remoteViewer.endSession(SESSION_ID);
   window.close();
+});
+
+document.getElementById('fs-btn').addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
 });
 
 document.getElementById('hide-btn').addEventListener('click', () => {
