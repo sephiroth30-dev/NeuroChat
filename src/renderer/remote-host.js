@@ -31,6 +31,7 @@ document.getElementById('end-btn').onclick = async () => {
   await remoteHost.endSession(SESSION_ID);
   window.close();
 };
+document.getElementById('hide-btn').onclick = () => remoteHost.minimizeWindow();
 
 function _showSessionActive() {
   document.getElementById('host-title').textContent = 'Sesión remota activa';

@@ -49,9 +49,29 @@
 
 .host-stats { color: #6aada3; font-size: 11px; }
 
+.host-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  align-items: center;
+}
+
+.hide-btn {
+  -webkit-app-region: no-drag;
+  padding: 6px 14px;
+  border: 1px solid rgba(74, 158, 143, 0.55);
+  border-radius: 6px;
+  background: rgba(74, 158, 143, 0.12);
+  color: #4A9E8F;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.hide-btn:hover { background: rgba(74, 158, 143, 0.28); color: #6bbdaf; }
+
 .end-btn {
   -webkit-app-region: no-drag;
-  margin-top: 4px;
   padding: 6px 14px;
   border: none;
   border-radius: 6px;
@@ -61,7 +81,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s;
-  align-self: flex-start;
 }
 .end-btn:hover { background: #e74c3c; }
 
