@@ -583,6 +583,22 @@ function makeDateSeparator(ts) {
   return el;
 }
 
+// Appends a hover down-arrow button to a msg-bubble that opens the context menu.
+// Added to all message types (text, file, audio) for WhatsApp-style interaction.
+function _addMsgActionBtn(row, msg, isOutgoing) {
+  const bubble = row.querySelector('.msg-bubble');
+  if (!bubble) return;
+  const btn = document.createElement('button');
+  btn.className = 'msg-action-btn';
+  btn.title = 'Opciones del mensaje';
+  btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>`;
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    showContextMenu(e, msg, isOutgoing);
+  });
+  bubble.appendChild(btn);
+}
+
 function makeMsgRow(msg, isOutgoing, grouped) {
   const row = document.createElement('div');
   row.className = `msg-row${isOutgoing ? ' outgoing' : ''}${grouped ? ' grouped' : ''}`;
@@ -635,6 +651,7 @@ function makeMsgRow(msg, isOutgoing, grouped) {
     showContextMenu(e, msg, isOutgoing);
   });
 
+  _addMsgActionBtn(row, msg, isOutgoing);
   return row;
 }
 
@@ -683,8 +700,9 @@ function makeFileRow(row, msg, isOutgoing) {
   }
 
   const statusHtml = isOutgoing ? renderDeliveryStatus(msg) : '';
+  const bubbleClass = isImage && localPath ? 'msg-bubble has-image' : 'msg-bubble';
   row.innerHTML = `
-    <div class="msg-bubble">
+    <div class="${bubbleClass}">
       ${currentChat?.type === 'channel' && !isOutgoing ? `<span class="msg-sender" style="color:${msg.color || '#4A9E8F'}">${escHtml(msg.sender_name || 'Usuario')}</span>` : ''}
       ${inner}
       <div class="msg-meta">
@@ -711,6 +729,7 @@ function makeFileRow(row, msg, isOutgoing) {
     e.preventDefault();
     showContextMenu(e, msg, isOutgoing);
   });
+  _addMsgActionBtn(row, msg, isOutgoing);
   return row;
 }
 
@@ -745,6 +764,7 @@ function makeAudioRow(row, msg, isOutgoing) {
     e.preventDefault();
     showContextMenu(e, msg, isOutgoing);
   });
+  _addMsgActionBtn(row, msg, isOutgoing);
 
   if (audioSrc) {
     const audio = new Audio(audioSrc);

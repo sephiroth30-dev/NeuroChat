@@ -332,6 +332,45 @@
   position: relative;
 }
 
+/* ── Hover action button (WhatsApp-style down-arrow) ──────────────────────── */
+.msg-action-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.15);
+  border: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+  color: var(--nc-text);
+  z-index: 3;
+  flex-shrink: 0;
+}
+.msg-bubble:hover .msg-action-btn { opacity: 1; }
+.msg-action-btn:hover { background: rgba(0, 0, 0, 0.30); }
+
+/* For outgoing messages the arrow moves to the left side of the bubble */
+.msg-row.outgoing .msg-action-btn {
+  right: auto;
+  left: 4px;
+}
+
+/* ── Image messages: edge-to-edge inside bubble ───────────────────────────── */
+.msg-bubble.has-image {
+  padding: 3px 3px 0;
+  overflow: hidden;
+}
+.msg-bubble.has-image .msg-meta {
+  padding: 2px 8px 5px;
+}
+
 /* Reaction picker popup */
 .reaction-picker {
   position: absolute;

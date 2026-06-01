@@ -118,10 +118,11 @@
 
 /* Image thumbnail */
 .img-bubble {
-  max-width: 280px;
-  border-radius: var(--nc-radius);
+  max-width: 340px;
+  border-radius: var(--nc-radius-sm);
   overflow: hidden;
   cursor: pointer;
+  position: relative;
 }
 .img-bubble img {
   width: 100%;
