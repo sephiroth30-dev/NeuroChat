@@ -1624,6 +1624,33 @@ function bindEvents() {
     e.target.value = '';
   });
 
+  // Paste image from clipboard (Ctrl+V / Cmd+V with an image in clipboard)
+  $('message-input').addEventListener('paste', async e => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (!item.type.startsWith('image/')) continue;
+      e.preventDefault();
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      if (!currentChat) { showToast('Selecciona un chat primero.', 'warning'); return; }
+      try {
+        const ext = item.type === 'image/png' ? 'png' : item.type === 'image/jpeg' ? 'jpg' : 'png';
+        const name = `captura-${Date.now()}.${ext}`;
+        const buffer = await blob.arrayBuffer();
+        const { ok, filePath, size } = await nc.saveClipboardImage({ buffer, name, mimeType: item.type });
+        if (!ok) { showToast('No se pudo guardar la imagen del portapapeles.', 'error'); return; }
+        // Plain object compatible with showFilePreviewPanel and _sendFileNow
+        const fileObj = { name, size, type: item.type, path: filePath, _blob: blob };
+        showFilePreviewPanel(fileObj);
+      } catch (err) {
+        console.error('[paste] clipboard image error:', err);
+        showToast('Error al procesar la imagen del portapapeles.', 'error');
+      }
+      return; // only handle first image item
+    }
+  });
+
   // Drag & drop into chat area
   const chatView = $('chat-view');
   chatView.addEventListener('dragover', e => {
@@ -1925,7 +1952,7 @@ function showFilePreviewPanel(file) {
   thumbEl.innerHTML = '';
   if (file.type.startsWith('image/')) {
     const img = document.createElement('img');
-    img.src = URL.createObjectURL(file);
+    img.src = URL.createObjectURL(file._blob || file);
     img.onload = () => URL.revokeObjectURL(img.src);
     thumbEl.appendChild(img);
   } else {

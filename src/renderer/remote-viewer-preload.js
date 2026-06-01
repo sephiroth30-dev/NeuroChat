@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('remoteViewer', {
   // End this session
   endSession: sessionId => ipcRenderer.invoke('remote:end', { sessionId }),
 
+  // Minimize (hide) the viewer window without ending the session
+  minimizeWindow: () => ipcRenderer.send('remote:minimize'),
+
   // Listen for incoming WebRTC signaling or session end
   on: (channel, fn) => {
     const allowed = ['remote:signaling', 'remote:session-ended'];

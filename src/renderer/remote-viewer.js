@@ -332,12 +332,8 @@ document.getElementById('end-btn').addEventListener('click', async () => {
   window.close();
 });
 
-document.getElementById('fs-btn').addEventListener('click', () => {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(() => {});
-  } else {
-    document.exitFullscreen().catch(() => {});
-  }
+document.getElementById('hide-btn').addEventListener('click', () => {
+  remoteViewer.minimizeWindow();
 });
 
 // ── Stats ─────────────────────────────────────────────────────────────────────

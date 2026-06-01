@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('neurochat', {
   openFile: localPath => ipcRenderer.invoke('file:open', localPath),
   downloadFile: localPath => ipcRenderer.invoke('file:download', localPath),
   sendAudio: opts => ipcRenderer.invoke('audio:send', opts),
+  saveClipboardImage: opts => ipcRenderer.invoke('file:saveClipboard', opts),
   chooseDownloadDir: () => ipcRenderer.invoke('file:chooseDir'),
   chooseAvatar: () => ipcRenderer.invoke('file:chooseAvatar'),
 

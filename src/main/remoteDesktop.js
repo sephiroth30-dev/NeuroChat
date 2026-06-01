@@ -169,6 +169,12 @@ function _registerIPC() {
     if (peer) wsClient.sendTo(peer, msg);
   });
 
+  // Minimize the viewer window without ending the session
+  ipcMain.on('remote:minimize', _e => {
+    const win = BrowserWindow.fromWebContents(_e.sender);
+    if (win && !win.isDestroyed()) win.minimize();
+  });
+
   // Return ICE server configuration (STUN + optional TURN from settings)
   ipcMain.handle('remote:getIceServers', () => {
     const settings = db.getAllSettings ? db.getAllSettings() : {};

@@ -284,6 +284,18 @@ function register() {
     }
   });
 
+  // Save a clipboard image (ArrayBuffer) to a temp file on disk and return its path
+  ipcMain.handle('file:saveClipboard', async (_e, { buffer, name, mimeType }) => {
+    const fs = require('fs');
+    const { app: electronApp } = require('electron');
+    const buf = Buffer.from(buffer);
+    const clipDir = path.join(electronApp.getPath('userData'), 'clipboard');
+    if (!fs.existsSync(clipDir)) fs.mkdirSync(clipDir, { recursive: true });
+    const filePath = path.join(clipDir, name);
+    fs.writeFileSync(filePath, buf);
+    return { ok: true, filePath, size: buf.length };
+  });
+
   ipcMain.handle('audio:send', async (_e, { buffer, name, mimeType = 'audio/webm', chatType, chatId }) => {
     const profile = db.getProfile();
     if (!profile) return { ok: false };

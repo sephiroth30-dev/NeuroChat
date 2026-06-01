@@ -5,6 +5,31 @@ Formato: `[version] — fecha — descripción`
 
 ---
 
+## [2.2.22] — 2026-06-01 — Botón "Ocultar" en viewer remoto + pegar capturas de pantalla en chat
+
+### Nuevo — Botón "Ocultar" en la ventana de visualización remota
+
+- **Reemplazado** el botón de pantalla completa (que no funcionaba bien) por un botón **"Ocultar"** en la barra flotante del viewer remoto.
+- Al hacer clic en "Ocultar" la ventana se minimiza a la barra de tareas sin cerrar la sesión ni interrumpir el vídeo.
+- Implementación: `remoteViewer.minimizeWindow()` → IPC `remote:minimize` → `BrowserWindow.fromWebContents(sender).minimize()`.
+- Archivos: `remote-viewer.html`, `remote-viewer.js`, `remote-viewer-preload.js`, `src/main/remoteDesktop.js`.
+
+### Corregido — Pegar capturas de pantalla en el chat (Ctrl+V / Cmd+V)
+
+**Problema**: al copiar una captura de pantalla y pegarla en el campo de mensaje, nada ocurría. No había ningún handler de `paste` en el área de mensajes.
+
+**Causa**: las imágenes del portapapeles son `Blob` en memoria sin propiedad `.path`; el sistema de envío de archivos requería una ruta en disco (`filePath`).
+
+**Solución**:
+1. Nuevo handler IPC `file:saveClipboard` (en `ipcHandlers.js`): recibe el buffer de la imagen, lo guarda en `userData/clipboard/` y devuelve la ruta en disco.
+2. `saveClipboardImage` expuesto en `preload.js` via `contextBridge`.
+3. Handler `paste` en `message-input` (`app.js`): detecta ítems de imagen en `clipboardData.items` → guarda en disco via IPC → abre el panel de previsualización con la imagen lista para enviar (con descripción opcional).
+4. `showFilePreviewPanel` actualizado para usar `file._blob` cuando está disponible (imagen de portapapeles) en lugar de `URL.createObjectURL(file)` directamente.
+
+**Flujo del usuario**: Ctrl+V con imagen en portapapeles → aparece el panel de previsualización → usuario puede escribir una descripción → Enter o clic en Enviar → la imagen se envía como archivo adjunto.
+
+---
+
 ## [2.2.21] — 2026-06-01 — Soporte remoto: corrección definitiva de 5 bugs críticos (race condition + timer leak + ICE serialización)
 
 ### Corregido — Escritorio remoto (bugs críticos confirmados por auditoría)
