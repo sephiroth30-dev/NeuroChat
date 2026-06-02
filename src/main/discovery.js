@@ -184,6 +184,21 @@ function handleMessage(msg, rinfo) {
   store.setUserOnline(user);
   db.upsertUser(user);
 
+  // Reply with our own announce directly to the sender (unicast).
+  // This ensures bidirectional discovery across different networks (e.g. Tailscale
+  // peers that can't receive LAN broadcasts).
+  if (socket && myProfile && myProfile.status !== 'invisible') {
+    const localIps = new Set(getLocalIPs());
+    if (!localIps.has(rinfo.address)) {
+      const reply = buildPayload();
+      if (reply) {
+        socket.send(reply, 0, reply.length, UDP_PORT, rinfo.address, err => {
+          if (err) console.warn(`[Discovery] unicast reply → ${rinfo.address}: ${err.message}`);
+        });
+      }
+    }
+  }
+
   // Deliver any messages queued while this peer was offline
   const pending = store.drainQueue(user.uuid);
   if (pending.length > 0) {
