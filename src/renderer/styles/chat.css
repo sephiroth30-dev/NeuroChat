@@ -268,26 +268,68 @@
   position: fixed;
   background: var(--nc-sidebar);
   border: 1px solid var(--nc-border);
-  border-radius: var(--nc-radius);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.1);
   z-index: 500;
-  min-width: 170px;
+  min-width: 190px;
   overflow: hidden;
   padding: 4px 0;
+  animation: ctx-appear 0.12s cubic-bezier(0.2, 0, 0.2, 1);
+  transform-origin: top left;
 }
+.context-menu.above {
+  transform-origin: bottom left;
+}
+@keyframes ctx-appear {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Quick emoji reactions row */
+.ctx-react-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px 6px;
+}
+.ctx-react-btn {
+  font-size: 20px;
+  line-height: 1;
+  padding: 5px 6px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.1s;
+  flex: 1;
+  text-align: center;
+}
+.ctx-react-btn:hover {
+  background: var(--nc-input-bg);
+  transform: scale(1.25);
+}
+.ctx-react-more {
+  font-size: 14px;
+  color: var(--nc-text-2);
+}
+.ctx-separator {
+  height: 1px;
+  background: var(--nc-border);
+  margin: 3px 0;
+}
+
 .context-item {
-  padding: 8px 14px;
-  font-size: 13px;
+  padding: 9px 16px;
+  font-size: 13.5px;
   cursor: pointer;
   transition: background var(--nc-transition);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   color: var(--nc-text);
-  letter-spacing: 0.01em;
 }
 .context-item svg {
-  opacity: 0.65;
+  opacity: 0.6;
   flex-shrink: 0;
 }
 .context-item:hover {

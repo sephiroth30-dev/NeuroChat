@@ -849,55 +849,88 @@ function showContextMenu(e, msg, isOutgoing) {
   const menu = document.createElement('div');
   menu.className = 'context-menu';
 
+  // ── Quick reactions row ──────────────────────────────────────────────────
+  const reactRow = document.createElement('div');
+  reactRow.className = 'ctx-react-row';
+  [...QUICK_REACTIONS, '➕'].forEach((emoji, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'ctx-react-btn' + (i === QUICK_REACTIONS.length ? ' ctx-react-more' : '');
+    btn.textContent = emoji;
+    btn.title = i === QUICK_REACTIONS.length ? 'Más reacciones' : emoji;
+    btn.onclick = async () => {
+      removeContextMenu();
+      if (i === QUICK_REACTIONS.length) {
+        showReactionPicker(e, msg);
+      } else {
+        await nc.sendReaction(msg.id, emoji);
+        await loadMessages();
+      }
+    };
+    reactRow.appendChild(btn);
+  });
+  menu.appendChild(reactRow);
+
+  const sep = document.createElement('div');
+  sep.className = 'ctx-separator';
+  menu.appendChild(sep);
+
+  // ── Menu items ────────────────────────────────────────────────────────────
   const CTX_ICONS = {
-    reply:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>`,
-    forward: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>`,
-    react:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><circle cx="9" cy="9" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="1.2" fill="currentColor" stroke="none"/></svg>`,
-    copy:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
-    edit:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>`,
-    delete:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>`,
-    pin:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>`,
+    reply:   `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>`,
+    forward: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>`,
+    copy:    `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+    edit:    `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>`,
+    delete:  `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>`,
+    pin:     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>`,
   };
 
   const items = [
     { icon: 'reply',   label: 'Responder',  action: () => setReply(msg) },
-    { icon: 'forward', label: 'Reenviar',   action: () => showForwardModal(msg) },
-    { icon: 'react',   label: 'Reaccionar', action: () => showReactionPicker(e, msg) },
     { icon: 'copy',    label: 'Copiar',     action: () => navigator.clipboard.writeText(msg.content || '') },
+    { icon: 'forward', label: 'Reenviar',   action: () => showForwardModal(msg) },
   ];
 
   if (isOutgoing && !msg.deleted && (msg.type || 'text') === 'text') {
-    items.push({ icon: 'edit',   label: 'Editar',   action: () => startEdit(msg) });
+    items.push({ icon: 'edit', label: 'Editar', action: () => startEdit(msg) });
   }
-
-  if (isOutgoing && !msg.deleted) {
-    items.push({ icon: 'delete', label: 'Eliminar', action: () => deleteMessage(msg), danger: true });
-  }
-
   if (currentChat?.type === 'channel') {
     items.push({ icon: 'pin', label: 'Anclar', action: () => pinMessage(msg) });
+  }
+  if (isOutgoing && !msg.deleted) {
+    items.push({ icon: 'delete', label: 'Eliminar', action: () => deleteMessage(msg), danger: true });
   }
 
   items.forEach(item => {
     const el = document.createElement('div');
     el.className = `context-item${item.danger ? ' danger' : ''}`;
     el.innerHTML = `${CTX_ICONS[item.icon] || ''}<span>${item.label}</span>`;
-    el.onclick = () => {
-      removeContextMenu();
-      item.action();
-    };
+    el.onclick = () => { removeContextMenu(); item.action(); };
     menu.appendChild(el);
   });
 
+  // ── Smart positioning ─────────────────────────────────────────────────────
+  menu.style.visibility = 'hidden';
   document.body.appendChild(menu);
-  const rect = menu.getBoundingClientRect();
-  menu.style.left = `${Math.max(8, Math.min(e.clientX, window.innerWidth - rect.width - 8))}px`;
-  menu.style.top = `${Math.max(8, Math.min(e.clientY, window.innerHeight - rect.height - 8))}px`;
+  const { width: mw, height: mh } = menu.getBoundingClientRect();
+  const margin = 8;
+  let x = e.clientX;
+  let y = e.clientY;
+
+  // Horizontal: prefer right of click, flip left if not enough space
+  if (x + mw + margin > window.innerWidth) x = Math.max(margin, e.clientX - mw);
+
+  // Vertical: prefer below, flip above if not enough space
+  if (y + mh + margin > window.innerHeight) {
+    y = Math.max(margin, e.clientY - mh);
+    menu.classList.add('above');
+  }
+
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.style.visibility = '';
   activeMenu = menu;
 
-  setTimeout(() => {
-    document.addEventListener('click', removeContextMenu, { once: true });
-  }, 0);
+  setTimeout(() => document.addEventListener('click', removeContextMenu, { once: true }), 0);
 }
 
 function removeContextMenu() {
