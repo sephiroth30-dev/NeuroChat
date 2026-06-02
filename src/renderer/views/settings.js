@@ -465,7 +465,7 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
     const el = container.querySelector('#s-ips-value');
     if (!el) return;
     el.textContent = info.ips.length
-      ? info.ips.join(' · ')
+      ? info.ips.map(i => i.address).join(' · ')
       : 'Sin interfaz detectada';
   });
 
