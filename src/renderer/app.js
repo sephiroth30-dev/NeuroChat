@@ -591,7 +591,7 @@ function _addMsgActionBtn(row, msg, isOutgoing) {
   const btn = document.createElement('button');
   btn.className = 'msg-action-btn';
   btn.title = 'Opciones del mensaje';
-  btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>`;
+  btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
   btn.addEventListener('click', e => {
     e.stopPropagation();
     showContextMenu(e, msg, isOutgoing);
@@ -818,9 +818,14 @@ function getFileIcon(mimeType = '') {
 }
 
 function renderDeliveryStatus(msg) {
-  if (!msg.delivered && !msg.read_by?.length) return '<span class="msg-status">✓</span>';
-  if (!msg.read_by?.length) return '<span class="msg-status">✓✓</span>';
-  return '<span class="msg-status read">✓✓</span>';
+  const check = `<svg width="14" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5 6 5.5 10 14 1.5"/></svg>`;
+  if (!msg.delivered && !msg.read_by?.length) {
+    return `<span class="msg-status">${check}</span>`;
+  }
+  if (!msg.read_by?.length) {
+    return `<span class="msg-status">${check}${check}</span>`;
+  }
+  return `<span class="msg-status read">${check}${check}</span>`;
 }
 
 function renderReactions(reactions, myUuid) {

@@ -147,8 +147,6 @@
 @media (prefers-color-scheme: dark) {
   .msg-row.outgoing .msg-bubble { color: #e9edef; }
   .msg-row.outgoing .msg-time { color: rgba(233,237,239,0.6); }
-  .msg-row.outgoing .msg-status { color: rgba(233,237,239,0.6); }
-  .msg-row.outgoing .msg-status.read { color: #53bdeb; }
 }
 
 /* Sender name (channels) */
@@ -207,12 +205,23 @@
   white-space: nowrap;
 }
 .msg-status {
-  font-size: 12px;
-  color: var(--nc-text-2);
+  display: inline-flex;
+  align-items: center;
   line-height: 1;
+  color: rgba(0,0,0,0.35);
 }
-.msg-status.read {
-  color: var(--nc-primary);
+.msg-status svg + svg {
+  margin-left: -5px;
+}
+.msg-status.read svg {
+  color: #53bdeb;
+}
+/* Outgoing bubble overrides */
+.msg-row.outgoing .msg-status {
+  color: rgba(233,237,239,0.65);
+}
+.msg-row.outgoing .msg-status.read svg {
+  color: #53bdeb;
 }
 
 /* Reply quote */
@@ -401,31 +410,32 @@
 /* ── Hover action button (WhatsApp-style down-arrow) ──────────────────────── */
 .msg-action-btn {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.15);
+  top: 0;
+  right: -1px;
+  width: 32px;
+  height: 28px;
   border: none;
   padding: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding-top: 5px;
+  padding-right: 4px;
   opacity: 0;
   cursor: pointer;
-  transition: opacity 0.15s, background 0.15s;
-  color: var(--nc-text);
+  transition: opacity 0.15s;
+  background: radial-gradient(ellipse at top right, rgba(0,0,0,0.22) 0%, transparent 70%);
+  border-radius: 0 var(--nc-radius) 0 0;
+  color: white;
   z-index: 3;
   flex-shrink: 0;
 }
 .msg-bubble:hover .msg-action-btn { opacity: 1; }
-.msg-action-btn:hover { background: rgba(0, 0, 0, 0.30); }
+.msg-action-btn:hover { opacity: 1; }
 
-/* For outgoing messages the arrow moves to the left side of the bubble */
-.msg-row.outgoing .msg-action-btn {
-  right: auto;
-  left: 4px;
+/* For incoming messages the gradient comes from the top right */
+.msg-row:not(.outgoing) .msg-action-btn {
+  background: radial-gradient(ellipse at top right, rgba(0,0,0,0.18) 0%, transparent 70%);
 }
 
 /* ── Image messages: edge-to-edge inside bubble ───────────────────────────── */
