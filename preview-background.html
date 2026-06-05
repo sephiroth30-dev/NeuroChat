@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Preview — Fondo precolombino NeuroChat</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; display: flex; flex-direction: column; align-items: center; padding: 30px 20px; gap: 24px; }
+
+  h2 { color: #e0e0e0; font-size: 14px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; }
+
+  /* ── Chat window mockup ── */
+  .chat-window {
+    width: 620px;
+    height: 480px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    background: #f0f2f5;
+  }
+
+  /* Header */
+  .chat-header {
+    background: #fff;
+    padding: 12px 20px;
+    border-bottom: 1px solid #e9edef;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .avatar { width: 38px; height: 38px; border-radius: 50%; background: #4A9E8F; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 15px; flex-shrink: 0; }
+  .header-info { display: flex; flex-direction: column; }
+  .header-name { font-size: 15px; font-weight: 600; color: #111b21; }
+  .header-sub { font-size: 12px; color: #667781; }
+
+  /* Message list — the main area with background pattern */
+  .message-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background-color: #efeae2;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='500' height='380'%3E%3Cpath transform='translate(55,72) rotate(12)' d='M0,0 h10 v-10 h-20 v20 h30 v-30 h-40 v40 h50 v-50' fill='none' stroke='%23888' stroke-width='1.5' opacity='0.15'/%3E%3Cpath transform='translate(300,90) rotate(-9)' d='M-4,-16 v12 h-12 v8 h12 v12 h8 v-12 h12 v-8 h-12 v-12 Z' fill='none' stroke='%23888' stroke-width='1.5' opacity='0.13'/%3E%3Cpath transform='translate(180,278) rotate(-20) scale(1.5)' d='M0,0 h10 v-10 h-20 v20 h30 v-30 h-40 v40 h50 v-50' fill='none' stroke='%23888' stroke-width='1.3' opacity='0.1'/%3E%3Cpath transform='translate(432,158) rotate(8)' d='M-18,2 L-8,-10 L-2,-4 L8,-14 L12,0 L8,14 L-2,4 L-8,10 Z' fill='none' stroke='%23888' stroke-width='1.5' opacity='0.13'/%3E%3Cpath transform='translate(385,312) rotate(18) scale(0.85)' d='M0,0 h14 v8 h-6 v8 h16 v-16 h8 v24 h-32 v-8 h6 v-8 h-6 Z' fill='none' stroke='%23888' stroke-width='1.5' opacity='0.14'/%3E%3Cpath transform='translate(95,330) rotate(-5) scale(0.85)' d='M0,-18 L3,-9 L12,-12 L9,-3 L18,0 L9,3 L12,12 L3,9 L0,18 L-3,9 L-12,12 L-9,3 L-18,0 L-9,-3 L-12,-12 L-3,-9 Z' fill='none' stroke='%23888' stroke-width='1.5' opacity='0.12'/%3E%3Cpath transform='translate(245,150) rotate(25) scale(0.65)' d='M-4,-16 v12 h-12 v8 h12 v12 h8 v-12 h12 v-8 h-12 v-12 Z' fill='none' stroke='%23888' stroke-width='1.5' opacity='0.11'/%3E%3C/svg%3E");
+    background-size: 500px 380px;
+    justify-content: flex-end;
+  }
+
+  /* Messages */
+  .msg-row { display: flex; margin: 2px 0; }
+  .msg-row.out { justify-content: flex-end; }
+  .msg-row.in  { justify-content: flex-start; }
+
+  .bubble {
+    max-width: 65%;
+    padding: 7px 12px 5px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.45;
+    position: relative;
+  }
+  .bubble.out {
+    background: #d9fdd3;
+    border-top-right-radius: 2px;
+    color: #111b21;
+  }
+  .bubble.in {
+    background: #fff;
+    border-top-left-radius: 2px;
+    color: #111b21;
+  }
+  .bubble-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    margin-top: 2px;
+  }
+  .bubble-time { font-size: 10px; color: #667781; }
+
+  /* Checkmarks SVG — same as app */
+  .msg-status { display: inline-flex; align-items: center; }
+  .msg-status svg + svg { margin-left: -5px; }
+  .check-read { color: #53bdeb; }
+  .check-grey { color: #8696a0; }
+
+  /* Input bar */
+  .input-bar {
+    background: #f0f2f5;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid #e9edef;
+    flex-shrink: 0;
+  }
+  .input-field {
+    flex: 1;
+    background: #fff;
+    border: none;
+    border-radius: 24px;
+    padding: 9px 16px;
+    font-size: 14px;
+    color: #111b21;
+    outline: none;
+  }
+  .send-btn {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: #4A9E8F; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<h2>Preview — Fondo Precolombino + Chulitos</h2>
+
+<div class="chat-window">
+
+  <!-- Header -->
+  <div class="chat-header">
+    <div class="avatar">AL</div>
+    <div class="header-info">
+      <span class="header-name">Alejandro López</span>
+      <span class="header-sub">En línea</span>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="message-list">
+
+    <div class="msg-row in">
+      <div class="bubble in">
+        Buenos días, ¿ya revisaste el informe de la semana?
+        <div class="bubble-meta">
+          <span class="bubble-time">08:42</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg-row out">
+      <div class="bubble out">
+        Sí, lo estoy revisando ahora mismo
+        <div class="bubble-meta">
+          <span class="bubble-time">08:44</span>
+          <!-- 2 checks grises = entregado, no leído -->
+          <span class="msg-status check-grey">
+            <svg width="14" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5 6 5.5 10 14 1.5"/></svg>
+            <svg width="14" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5 6 5.5 10 14 1.5"/></svg>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg-row out">
+      <div class="bubble out">
+        Hay algunos puntos que necesitamos discutir en la reunión de hoy
+        <div class="bubble-meta">
+          <span class="bubble-time">08:45</span>
+          <!-- 2 checks azules = leído -->
+          <span class="msg-status check-read">
+            <svg width="14" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5 6 5.5 10 14 1.5"/></svg>
+            <svg width="14" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5 6 5.5 10 14 1.5"/></svg>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg-row in">
+      <div class="bubble in">
+        Claro, a las 10am estoy disponible 👍
+        <div class="bubble-meta">
+          <span class="bubble-time">08:47</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg-row out">
+      <div class="bubble out">
+        Perfecto, nos vemos entonces
+        <div class="bubble-meta">
+          <span class="bubble-time">08:48</span>
+          <!-- 1 solo check = enviado -->
+          <span class="msg-status check-grey">
+            <svg width="14" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5 6 5.5 10 14 1.5"/></svg>
+          </span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Input -->
+  <div class="input-bar">
+    <input class="input-field" placeholder="Escribe un mensaje…" readonly>
+    <button class="send-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+    </button>
+  </div>
+
+</div>
+
+<!-- Legend -->
+<div style="display:flex;gap:24px;color:#aaa;font-size:12px;align-items:center">
+  <span>
+    <span style="color:#8696a0">✓✓</span> gris = entregado, no leído
+  </span>
+  <span>
+    <span style="color:#53bdeb">✓✓</span> azul = leído
+  </span>
+  <span>
+    <span style="color:#8696a0">✓</span> solo = enviado
+  </span>
+</div>
+
+</body>
+</html>
