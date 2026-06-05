@@ -78,6 +78,11 @@ function handleIncoming(msg) {
       read_by: [],
     };
 
+    // If this DM conversation was soft-deleted, restore it so the new message is visible
+    if (record.private_chat_uuid) {
+      db.restoreConversation(record.private_chat_uuid);
+    }
+
     // For incoming audio: extract base64, save to disk, strip data from DB content
     if (record.type === 'audio') {
       try {

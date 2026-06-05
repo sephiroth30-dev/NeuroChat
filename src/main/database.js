@@ -317,6 +317,8 @@ function getMessages({ channelId, privateChatUuid, limit = 50, before = null }) 
   if (privateChatUuid) {
     const myUuid = getProfile()?.uuid;
     const normalizedId = [myUuid, privateChatUuid].sort().join(':');
+    // Return empty if conversation was soft-deleted
+    if (getHiddenConversations().includes(normalizedId)) return [];
     const q = before
       ? `SELECT * FROM messages WHERE private_chat_uuid = ? AND received_at < ? ORDER BY received_at DESC, rowid DESC LIMIT ?`
       : `SELECT * FROM messages WHERE private_chat_uuid = ? ORDER BY received_at DESC, rowid DESC LIMIT ?`;
@@ -543,11 +545,27 @@ function seedDefaultChannels() {
 
 // ── DM conversation management ────────────────────────────────────────────────
 
+function getHiddenConversations() {
+  return getSetting('hidden_conversations') || [];
+}
+
+function hideConversation(chatId) {
+  const list = getHiddenConversations();
+  setSetting('hidden_conversations', [...new Set([...list, chatId])]);
+}
+
+function restoreConversation(chatId) {
+  const list = getHiddenConversations();
+  if (!list.includes(chatId)) return;
+  setSetting('hidden_conversations', list.filter(id => id !== chatId));
+}
+
 function deleteDMMessages(peerUuid) {
   const myUuid = getProfile()?.uuid;
   if (!myUuid) return;
   const chatId = [myUuid, peerUuid].sort().join(':');
-  db.prepare("DELETE FROM messages WHERE private_chat_uuid = ?").run(chatId);
+  // Soft-delete: hide the conversation instead of destroying messages permanently
+  hideConversation(chatId);
 }
 
 function getHiddenDMs() {
@@ -614,6 +632,9 @@ module.exports = {
   deleteUser,
   getHiddenDMs,
   setHiddenDM,
+  getHiddenConversations,
+  hideConversation,
+  restoreConversation,
   getLastDMTimestamps,
   getChannelMembers,
   getChannelMemberIds,
