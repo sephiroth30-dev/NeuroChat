@@ -405,6 +405,10 @@ function getFile(id) {
   return db.prepare('SELECT * FROM files WHERE id = ?').get(id);
 }
 
+function updateFileSha256(id, sha256) {
+  db.prepare('UPDATE files SET sha256 = ? WHERE id = ?').run(sha256 || '', id);
+}
+
 function getFileByMsgId(messageId) {
   return db.prepare('SELECT * FROM files WHERE message_id = ?').get(messageId);
 }
@@ -621,6 +625,7 @@ module.exports = {
   saveFile,
   getFile,
   getFileByMsgId,
+  updateFileSha256,
   pinMessage,
   unpinMessage,
   getPinnedMessages,

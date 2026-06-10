@@ -213,8 +213,8 @@ function register() {
     if (!profile) return { ok: false };
 
     const messageId = crypto.randomUUID();
+    const transferId = crypto.randomUUID(); // generated here so file record can be saved immediately
 
-    // Create file message in DB immediately so sender sees it in chat
     const message = {
       id: messageId,
       channel_id: opts.chatType === 'channel' ? opts.chatId : null,
@@ -231,10 +231,8 @@ function register() {
     };
     db.saveMessage(message);
 
-    // Send offer (computes SHA-256 hash, broadcasts FILE_OFFER via WebSocket)
-    const { transferId, hash } = await fileTransfer.sendFile({ ...opts, messageId });
-
-    // Save sender's own file record so the bubble is immediately "clickable" for sender
+    // Save file record BEFORE the async transfer so sender sees the image immediately,
+    // even if the transfer to the peer fails or the peer is offline.
     db.saveFile({
       id: transferId,
       message_id: messageId,
@@ -242,13 +240,20 @@ function register() {
       local_path: opts.filePath,
       size: opts.size,
       mime_type: opts.mimeType,
-      sha256: hash,
+      sha256: '',
       timestamp: Date.now(),
     });
 
-    // Broadcast the file message to peers via WebSocket
-    wsServer.broadcast(message);
+    // Initiate transfer (computes SHA-256 hash, sends FILE_OFFER via WebSocket).
+    // Uses the pre-generated transferId so the file record and offer share the same UUID.
+    try {
+      const { hash } = await fileTransfer.sendFile({ ...opts, messageId, transferId });
+      db.updateFileSha256(transferId, hash);
+    } catch (err) {
+      console.warn('[file:send] transfer error:', err.message);
+    }
 
+    wsServer.broadcast(message);
     return { ok: true };
   });
 

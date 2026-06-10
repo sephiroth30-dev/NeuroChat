@@ -53,14 +53,14 @@ function stop() {
 // ── Sender side ───────────────────────────────────────────────────────────────
 
 // Called by ipcHandlers. Returns { transferId, hash } when the offer is sent.
-async function sendFile({ filePath, name, size, mimeType, messageId, chatId, chatType }) {
+async function sendFile({ filePath, name, size, mimeType, messageId, chatId, chatType, transferId: givenId }) {
   if (!fs.existsSync(filePath)) throw new Error('Archivo no encontrado');
   if (size > MAX_FILESIZE) throw new Error('Archivo demasiado grande (máx 500 MB)');
 
   const profile = db.getProfile();
   if (!profile) throw new Error('Sin perfil');
 
-  const transferId = crypto.randomUUID();
+  const transferId = givenId || crypto.randomUUID();
   const hash = await computeHash(filePath);
 
   const toUuid = chatType === 'dm' ? chatId : null;

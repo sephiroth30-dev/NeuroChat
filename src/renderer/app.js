@@ -2040,27 +2040,31 @@ function hideFilePreviewPanel() {
 
 async function _sendFileNow(file, caption) {
   if (!currentChat) return;
-  if (caption) {
-    $('message-input').textContent = '';
-  }
-  await nc.sendFile({
-    filePath: file.path,
-    name: file.name,
-    size: file.size,
-    mimeType: file.type,
-    chatId: currentChat.id,
-    chatType: currentChat.type,
-  });
-  if (caption) {
-    await nc.sendMessage({
-      content: caption,
-      type: 'text',
-      channelId: currentChat.type === 'channel' ? currentChat.id : null,
-      toUuid: currentChat.type === 'dm' ? currentChat.id : null,
-      replyTo: null,
+  try {
+    if (caption) $('message-input').textContent = '';
+    await nc.sendFile({
+      filePath: file.path,
+      name: file.name,
+      size: file.size,
+      mimeType: file.type,
+      chatId: currentChat.id,
+      chatType: currentChat.type,
     });
+    if (caption) {
+      await nc.sendMessage({
+        content: caption,
+        type: 'text',
+        channelId: currentChat.type === 'channel' ? currentChat.id : null,
+        toUuid: currentChat.type === 'dm' ? currentChat.id : null,
+        replyTo: null,
+      });
+    }
+  } catch (err) {
+    console.error('[sendFile] error:', err);
+    showToast('Error al enviar el archivo.', 'error');
+  } finally {
+    await loadMessages();
   }
-  await loadMessages();
 }
 
 function showFileOfferDialog(offer) {
