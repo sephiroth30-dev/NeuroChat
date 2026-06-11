@@ -664,7 +664,10 @@ function makeFileRow(row, msg, isOutgoing) {
   const { name = 'Archivo', size = 0, mimeType = '' } = meta;
   const localPath = msg.localPath || null;
   const isImage = mimeType.startsWith('image/');
-  const safeLocal = localPath ? fileUrlFromPath(localPath) : '';
+  const safeLocal = localPath
+    ? fileUrlFromPath(localPath)
+    : (isImage && meta.data ? `data:${mimeType};base64,${meta.data}` : '');
+  const canShowInline = isImage && (localPath || (meta.data));
 
   const downloadBtn = localPath
     ? `<button class="file-download-btn" title="Guardar copia" data-path="${escHtml(localPath)}">
@@ -673,7 +676,7 @@ function makeFileRow(row, msg, isOutgoing) {
     : '';
 
   let inner;
-  if (isImage && localPath) {
+  if (canShowInline) {
     inner = `
       <div class="img-bubble">
         <img src="${safeLocal}" alt="${escHtml(name)}" loading="lazy" />
@@ -700,7 +703,7 @@ function makeFileRow(row, msg, isOutgoing) {
   }
 
   const statusHtml = isOutgoing ? renderDeliveryStatus(msg) : '';
-  const bubbleClass = isImage && localPath ? 'msg-bubble has-image' : 'msg-bubble';
+  const bubbleClass = canShowInline ? 'msg-bubble has-image' : 'msg-bubble';
   row.innerHTML = `
     <div class="${bubbleClass}">
       ${currentChat?.type === 'channel' && !isOutgoing ? `<span class="msg-sender" style="color:${msg.color || '#4A9E8F'}">${escHtml(msg.sender_name || 'Usuario')}</span>` : ''}
@@ -711,8 +714,8 @@ function makeFileRow(row, msg, isOutgoing) {
       </div>
     </div>`;
 
-  if (localPath && isImage) {
-    row.querySelector('img')?.addEventListener('click', () => nc.openFile(localPath));
+  if (canShowInline) {
+    if (localPath) row.querySelector('img')?.addEventListener('click', () => nc.openFile(localPath));
   } else if (localPath) {
     row.querySelector('.file-bubble')?.addEventListener('click', e => {
       if (e.target.closest('.file-download-btn')) return;
@@ -2042,14 +2045,26 @@ async function _sendFileNow(file, caption) {
   if (!currentChat) return;
   try {
     if (caption) $('message-input').textContent = '';
-    await nc.sendFile({
-      filePath: file.path,
-      name: file.name,
-      size: file.size,
-      mimeType: file.type,
-      chatId: currentChat.id,
-      chatType: currentChat.type,
-    });
+    const isInlineImage = file.type.startsWith('image/') && file.size <= 2 * 1024 * 1024;
+    if (isInlineImage) {
+      await nc.sendInlineImage({
+        filePath: file.path,
+        name: file.name,
+        size: file.size,
+        mimeType: file.type,
+        chatId: currentChat.id,
+        chatType: currentChat.type,
+      });
+    } else {
+      await nc.sendFile({
+        filePath: file.path,
+        name: file.name,
+        size: file.size,
+        mimeType: file.type,
+        chatId: currentChat.id,
+        chatType: currentChat.type,
+      });
+    }
     if (caption) {
       await nc.sendMessage({
         content: caption,

@@ -110,6 +110,33 @@ function handleIncoming(msg) {
         console.warn('[wsServer] audio save error:', err.message);
         db.saveMessage(record);
       }
+    } else if (record.type === 'file') {
+      // Inline image: has base64 data embedded → save to disk, strip from DB content
+      try {
+        const meta = JSON.parse(record.content || '{}');
+        if (meta.data && meta.mimeType?.startsWith('image/') && meta.name) {
+          const { app: electronApp } = require('electron');
+          const nodeFs = require('fs');
+          const nodePath = require('path');
+          const nodeCrypto = require('crypto');
+          const imgDir = nodePath.join(electronApp.getPath('userData'), 'images');
+          nodeFs.mkdirSync(imgDir, { recursive: true });
+          const localPath = nodePath.join(imgDir, meta.name);
+          nodeFs.writeFileSync(localPath, Buffer.from(meta.data, 'base64'));
+          record = { ...record, content: JSON.stringify({ name: meta.name, size: meta.size, mimeType: meta.mimeType }) };
+          db.saveMessage(record);
+          db.saveFile({
+            id: nodeCrypto.randomUUID(), message_id: record.id, original_name: meta.name,
+            local_path: localPath, size: meta.size || 0, mime_type: meta.mimeType || 'image/png',
+            sha256: '', timestamp: Date.now(),
+          });
+        } else {
+          db.saveMessage(record);
+        }
+      } catch (err) {
+        console.warn('[wsServer] inline image save error:', err.message);
+        db.saveMessage(record);
+      }
     } else {
       db.saveMessage(record); // ON CONFLICT DO NOTHING — safe to call multiple times
     }

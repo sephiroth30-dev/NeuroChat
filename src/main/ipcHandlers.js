@@ -339,6 +339,40 @@ function register() {
     wsServer.broadcast(message);
     return { ok: true };
   });
+  // Inline image send — embeds image as base64 so recipient sees thumbnail immediately
+  // without a P2P file transfer / accept dialog (mirrors the audio:send pattern).
+  ipcMain.handle('image:sendInline', async (_e, { filePath, name, size, mimeType, chatType, chatId }) => {
+    const profile = db.getProfile();
+    if (!profile) return { ok: false };
+
+    const buf = fs.readFileSync(filePath);
+    const base64 = buf.toString('base64');
+    const messageId = crypto.randomUUID();
+
+    const message = {
+      id: messageId,
+      channel_id: chatType === 'channel' ? chatId : null,
+      private_chat_uuid: chatType === 'dm' ? buildChatId(profile.uuid, chatId) : null,
+      from_uuid: profile.uuid,
+      content: JSON.stringify({ name, size: buf.length, mimeType, data: base64 }),
+      type: 'file',
+      reply_to: null,
+      timestamp: Date.now(),
+      edited: 0,
+      deleted: 0,
+      delivered: 0,
+      read_by: [],
+    };
+    db.saveMessage(message);
+    db.saveFile({
+      id: crypto.randomUUID(), message_id: messageId, original_name: name,
+      local_path: filePath, size: buf.length, mime_type: mimeType,
+      sha256: '', timestamp: Date.now(),
+    });
+    wsServer.broadcast(message);
+    return { ok: true };
+  });
+
   ipcMain.handle('file:chooseAvatar', async () => {
     const win = windowManager.getMainWindow();
     const result = await dialog.showOpenDialog(win, {

@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('neurochat', {
 
   // File transfer
   sendFile: opts => ipcRenderer.invoke('file:send', opts),
+  sendInlineImage: opts => ipcRenderer.invoke('image:sendInline', opts),
   acceptFile: transferId => ipcRenderer.invoke('file:accept', transferId),
   rejectFile: transferId => ipcRenderer.invoke('file:reject', transferId),
   openFile: localPath => ipcRenderer.invoke('file:open', localPath),
