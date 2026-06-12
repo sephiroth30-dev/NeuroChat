@@ -12,12 +12,89 @@ function getDbPath() {
 }
 
 function initialize() {
-  db = new Database(getDbPath());
+  const dbPath = getDbPath();
+
+  // If the DB is missing or empty, check alternative userData paths that may
+  // exist from previous installs (different productName casing, Local vs Roaming)
+  if (!_hasData(dbPath)) {
+    _tryRecoverFromLegacyPath(dbPath);
+  }
+
+  db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   createSchema();
   runMigrations();
   seedDefaultChannels();
+
+  // Keep a rolling backup so a corrupt or wiped DB can be recovered manually
+  _scheduleBackup(dbPath);
+}
+
+function _hasData(dbPath) {
+  const fs = require('fs');
+  if (!fs.existsSync(dbPath)) return false;
+  try {
+    const tmp = new (require('better-sqlite3'))(dbPath, { readonly: true });
+    const row = tmp.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table'").get();
+    tmp.close();
+    return row && row.n > 0;
+  } catch {
+    return false;
+  }
+}
+
+function _tryRecoverFromLegacyPath(currentPath) {
+  const fs = require('fs');
+  const os = require('os');
+  const home = os.homedir();
+
+  // Possible legacy userData locations (different casing, Local vs Roaming)
+  const candidates = [
+    path.join(app.getPath('appData'), 'neurochat', 'neurochat.db'),
+    path.join(app.getPath('appData'), 'NeuroChat', 'neurochat.db'),
+    path.join(home, 'AppData', 'Local', 'NeuroChat', 'neurochat.db'),
+    path.join(home, 'AppData', 'Local', 'neurochat', 'neurochat.db'),
+    path.join(home, 'AppData', 'Roaming', 'NeuroChat', 'neurochat.db'),
+    path.join(home, 'AppData', 'Roaming', 'neurochat', 'neurochat.db'),
+    path.join(home, 'Library', 'Application Support', 'NeuroChat', 'neurochat.db'),
+    path.join(home, 'Library', 'Application Support', 'neurochat', 'neurochat.db'),
+  ].filter(p => p !== currentPath);
+
+  for (const candidate of candidates) {
+    if (_hasData(candidate)) {
+      try {
+        fs.mkdirSync(path.dirname(currentPath), { recursive: true });
+        fs.copyFileSync(candidate, currentPath);
+        console.log(`[DB] Recuperado historial desde ${candidate}`);
+        return;
+      } catch (err) {
+        console.warn('[DB] No se pudo recuperar desde', candidate, err.message);
+      }
+    }
+  }
+}
+
+function _scheduleBackup(dbPath) {
+  const fs = require('fs');
+  const backupPath = dbPath + '.bak';
+
+  // Write backup immediately, then every 6 hours
+  const doBackup = () => {
+    try {
+      if (db && _hasData(dbPath)) {
+        db.backup(backupPath).catch(() => {
+          // Fallback to file copy if SQLite backup API fails
+          try { fs.copyFileSync(dbPath, backupPath); } catch {}
+        });
+      }
+    } catch {}
+  };
+
+  // Delay first backup until DB is initialized
+  setTimeout(doBackup, 5000);
+  const t = setInterval(doBackup, 6 * 60 * 60 * 1000);
+  if (t.unref) t.unref();
 }
 
 function createSchema() {

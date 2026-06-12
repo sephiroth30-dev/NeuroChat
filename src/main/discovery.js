@@ -25,7 +25,8 @@ function getNetworkInterfaces() {
   const result = [];
   for (const addrs of Object.values(os.networkInterfaces())) {
     for (const addr of addrs) {
-      if (addr.family === 'IPv4' && !addr.internal) {
+      // Node.js <18: family is 'IPv4'; Node.js 18+: family is the number 4
+      if ((addr.family === 'IPv4' || addr.family === 4) && !addr.internal) {
         result.push({ ip: addr.address, broadcast: calcBroadcast(addr.address, addr.netmask) });
       }
     }
@@ -103,7 +104,6 @@ function getExtraDiscoveryTargets() {
 function buildPayload() {
   if (!myProfile) return null;
   const ifaces = getNetworkInterfaces();
-  if (!ifaces.length) return null;
   const ips = ifaces.map(iface => iface.ip);
 
   return Buffer.from(
@@ -116,7 +116,7 @@ function buildPayload() {
       status: myProfile.status || 'available',
       statusMessage: myProfile.status_message || '',
       wsPort: 45679,
-      ip: ifaces[0].ip,
+      ip: ips[0] || '',
       ips,
       version: app.getVersion(),
       domain: process.platform === 'win32' ? (process.env.USERDOMAIN || '') : '',
@@ -131,9 +131,17 @@ function broadcast() {
   const payload = buildPayload();
   if (!payload) return;
 
-  for (const { broadcast: bcast } of getNetworkInterfaces()) {
-    socket.send(payload, 0, payload.length, UDP_PORT, bcast, err => {
-      if (err) console.warn(`[Discovery] broadcast → ${bcast}: ${err.message}`);
+  const ifaces = getNetworkInterfaces();
+  if (ifaces.length) {
+    for (const { broadcast: bcast } of ifaces) {
+      socket.send(payload, 0, payload.length, UDP_PORT, bcast, err => {
+        if (err) console.warn(`[Discovery] broadcast → ${bcast}: ${err.message}`);
+      });
+    }
+  } else {
+    // No local interfaces detected — use general broadcast as fallback
+    socket.send(payload, 0, payload.length, UDP_PORT, '255.255.255.255', err => {
+      if (err) console.warn(`[Discovery] fallback broadcast: ${err.message}`);
     });
   }
 
