@@ -5,7 +5,7 @@ const { BrowserWindow, shell, app, dialog } = require('electron');
 
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
-autoUpdater.logger = null; // silence electron-updater's own logging
+autoUpdater.logger = null;
 
 let _installTimer = null;
 let _shuttingDown = false;
@@ -112,13 +112,24 @@ function installUpdate() {
   if (_installTimer) { clearTimeout(_installTimer); _installTimer = null; }
 
   if (process.platform !== 'darwin') {
-    // Windows: NSIS oneClick silent install + auto-restart
-    try {
-      autoUpdater.quitAndInstall(true, true);
-    } catch (err) {
-      console.error('[Updater] quitAndInstall failed:', err.message);
-      setTimeout(() => app.quit(), 800);
-    }
+    // Destroy all renderer windows first so their file handles (SQLite, native
+    // modules) are released before NSIS tries to overwrite the installation dir.
+    BrowserWindow.getAllWindows().forEach(w => {
+      try { if (!w.isDestroyed()) w.destroy(); } catch {}
+    });
+
+    // Small pause lets the main-process cleanup (DB close, WS stop) triggered
+    // by the window-all-closed → before-quit chain run before NSIS kicks in.
+    setTimeout(() => {
+      try {
+        autoUpdater.quitAndInstall(true, true);
+      } catch (err) {
+        console.error('[Updater] quitAndInstall failed:', err.message);
+      }
+      // Hard exit fallback: if quitAndInstall didn't terminate the process
+      // within 2 s the installer would stall waiting for us, so force-exit.
+      setTimeout(() => app.exit(0), 2000);
+    }, 600);
     return;
   }
 
