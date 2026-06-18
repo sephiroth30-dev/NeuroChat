@@ -342,6 +342,7 @@ function register() {
   // Inline image send — embeds image as base64 so recipient sees thumbnail immediately
   // without a P2P file transfer / accept dialog (mirrors the audio:send pattern).
   ipcMain.handle('image:sendInline', async (_e, { filePath, name, size, mimeType, chatType, chatId }) => {
+    const fs = require('fs');
     const profile = db.getProfile();
     if (!profile) return { ok: false };
 

@@ -661,8 +661,13 @@ function makeFileRow(row, msg, isOutgoing) {
     meta = JSON.parse(msg.content || '{}');
   } catch {}
 
-  const { name = 'Archivo', size = 0, mimeType = '' } = meta;
+  const { name = 'Archivo', size = 0, mimeType: rawMime = '' } = meta;
   const localPath = msg.localPath || null;
+  // Infer mimeType from filename when content field is empty (Windows file picker omits it)
+  const mimeType = rawMime || (() => {
+    const ext = name.toLowerCase().split('.').pop();
+    return { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', tiff: 'image/tiff', tif: 'image/tiff' }[ext] || '';
+  })();
   const isImage = mimeType.startsWith('image/');
   const safeLocal = localPath
     ? fileUrlFromPath(localPath)
@@ -2041,17 +2046,25 @@ function hideFilePreviewPanel() {
   }
 }
 
+function _mimeFromFile(file) {
+  if (file.type) return file.type;
+  const ext = String(file.name || '').toLowerCase().split('.').pop();
+  const map = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', tiff: 'image/tiff', tif: 'image/tiff', heic: 'image/heic', heif: 'image/heif' };
+  return map[ext] || '';
+}
+
 async function _sendFileNow(file, caption) {
   if (!currentChat) return;
   try {
     if (caption) $('message-input').textContent = '';
-    const isInlineImage = file.type.startsWith('image/') && file.size <= 2 * 1024 * 1024;
+    const mimeType = _mimeFromFile(file);
+    const isInlineImage = mimeType.startsWith('image/') && file.size <= 8 * 1024 * 1024;
     if (isInlineImage) {
       await nc.sendInlineImage({
         filePath: file.path,
         name: file.name,
         size: file.size,
-        mimeType: file.type,
+        mimeType,
         chatId: currentChat.id,
         chatType: currentChat.type,
       });
@@ -2060,7 +2073,7 @@ async function _sendFileNow(file, caption) {
         filePath: file.path,
         name: file.name,
         size: file.size,
-        mimeType: file.type,
+        mimeType,
         chatId: currentChat.id,
         chatType: currentChat.type,
       });
