@@ -217,12 +217,8 @@
             <!-- File preview panel (WhatsApp-style, shown before sending) -->
             <div id="file-preview-panel" class="file-preview-panel hidden">
               <div class="fp-body">
-                <div id="fp-thumb" class="fp-thumb"></div>
-                <div class="fp-meta">
-                  <span class="fp-name" id="fp-name"></span>
-                  <span class="fp-size" id="fp-size"></span>
-                </div>
-                <button class="icon-btn fp-cancel-btn" id="fp-cancel-btn" title="Cancelar adjunto">
+                <div id="fp-thumbs" class="fp-thumbs"></div>
+                <button class="icon-btn fp-cancel-btn" id="fp-cancel-btn" title="Cancelar adjuntos">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
                 </button>
               </div>
@@ -267,7 +263,7 @@
                   <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
                 </svg>
               </button>
-              <input type="file" id="file-input" style="display: none" />
+              <input type="file" id="file-input" multiple style="display: none" />
 
               <div class="message-input-wrap">
                 <div

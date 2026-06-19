@@ -616,7 +616,7 @@ function makeMsgRow(msg, isOutgoing, grouped) {
   if (msg.type === 'audio') return makeAudioRow(row, msg, isOutgoing);
 
   const replyHtml = msg.reply_to
-    ? `<div class="msg-reply-quote">
+    ? `<div class="msg-reply-quote" data-reply-id="${escHtml(String(msg.reply_to))}">
         <span class="msg-reply-name">En respuesta a</span>
         <span class="msg-reply-text">${escHtml(msg.reply_to_content || '…')}</span>
        </div>`
@@ -628,6 +628,9 @@ function makeMsgRow(msg, isOutgoing, grouped) {
   const reactionsHtml = (msg.reactions || []).length
     ? `<div class="msg-reactions">${renderReactions(msg.reactions, myProfile?.uuid)}</div>`
     : '';
+
+  const jumbo = isEmojiOnly(msg.content) ? ' msg-emoji-jumbo' : '';
+  if (jumbo) row.classList.add('msg-emoji-jumbo');
 
   row.innerHTML = `
     <div class="msg-bubble">
@@ -1536,13 +1539,35 @@ document.getElementById('messages-inner').addEventListener('click', e => {
   if (url) nc.openUrl(url);
 });
 
+// ── Reply-quote click → scroll to original message ────────────────────────────
+document.getElementById('messages-inner').addEventListener('click', e => {
+  const quote = e.target.closest('.msg-reply-quote');
+  if (!quote) return;
+  const replyId = quote.dataset.replyId;
+  if (!replyId) return;
+  const target = document.querySelector(`[data-id="${CSS.escape(replyId)}"]`);
+  if (!target) return;
+  target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  target.classList.remove('msg-highlight');
+  void target.offsetWidth; // force reflow to restart animation
+  target.classList.add('msg-highlight');
+  setTimeout(() => target.classList.remove('msg-highlight'), 1500);
+});
+
 // ── Bind UI events ────────────────────────────────────────────────────────────
 function bindEvents() {
   // Send on Enter (Shift+Enter = newline)
   $('message-input').addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      if (_pendingFiles.length > 0) {
+        const caption = $('message-input').textContent.trim();
+        const files = [..._pendingFiles];
+        hideFilePreviewPanel();
+        _sendFilesNow(files, caption);
+      } else {
+        sendMessage();
+      }
     }
   });
 
@@ -1556,10 +1581,11 @@ function bindEvents() {
   });
 
   $('send-btn').onclick = () => {
-    if (_pendingFile) {
+    if (_pendingFiles.length > 0) {
       const caption = $('message-input').textContent.trim();
-      _sendFileNow(_pendingFile, caption);
+      const files = [..._pendingFiles];
       hideFilePreviewPanel();
+      _sendFilesNow(files, caption);
     } else {
       sendMessage();
     }
@@ -1684,8 +1710,8 @@ function bindEvents() {
   // Attach file
   $('attach-btn').onclick = () => $('file-input').click();
   $('file-input').addEventListener('change', e => {
-    const file = e.target.files[0];
-    if (file) showFilePreviewPanel(file);
+    const files = Array.from(e.target.files);
+    if (files.length) addFilesToPreview(files);
     e.target.value = '';
   });
 
@@ -1707,7 +1733,7 @@ function bindEvents() {
         if (!ok) { showToast('No se pudo guardar la imagen del portapapeles.', 'error'); return; }
         // Plain object compatible with showFilePreviewPanel and _sendFileNow
         const fileObj = { name, size, type: item.type, path: filePath, _blob: blob };
-        showFilePreviewPanel(fileObj);
+        addFilesToPreview([fileObj]);
       } catch (err) {
         console.error('[paste] clipboard image error:', err);
         showToast('Error al procesar la imagen del portapapeles.', 'error');
@@ -1726,8 +1752,8 @@ function bindEvents() {
   chatView.addEventListener('drop', e => {
     e.preventDefault();
     chatView.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if (file) showFilePreviewPanel(file);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length) addFilesToPreview(files);
   });
 
   // File preview panel cancel button
@@ -2002,43 +2028,65 @@ function showRemoteRequestModal(msg) {
 }
 
 // ── File send ─────────────────────────────────────────────────────────────────
-let _pendingFile = null;
+let _pendingFiles = [];
 
-function showFilePreviewPanel(file) {
+function addFilesToPreview(newFiles) {
   if (!currentChat) { showToast('Selecciona un chat primero.', 'warning'); return; }
-  if (file.size > 500 * 1024 * 1024) { showToast('El archivo supera el límite de 500 MB.', 'error'); return; }
-  _pendingFile = file;
-
   const panel = $('file-preview-panel');
-  const thumbEl = $('fp-thumb');
-  $('fp-name').textContent = file.name;
-  $('fp-size').textContent = formatSize(file.size);
+  const thumbsEl = $('fp-thumbs');
 
-  thumbEl.innerHTML = '';
-  if (file.type.startsWith('image/')) {
-    const img = document.createElement('img');
-    if (file.path) {
-      // Prefer file:// URL from disk (reliable in Electron for both picker and clipboard)
-      img.src = fileUrlFromPath(file.path);
+  for (const file of newFiles) {
+    if (file.size > 500 * 1024 * 1024) { showToast(`${file.name}: supera el límite de 500 MB.`, 'error'); continue; }
+    _pendingFiles.push(file);
+
+    const item = document.createElement('div');
+    item.className = 'fp-thumb-item';
+    item._file = file;
+
+    const mime = _mimeFromFile(file);
+    if (mime.startsWith('image/')) {
+      const img = document.createElement('img');
+      if (file.path) {
+        img.src = fileUrlFromPath(file.path);
+      } else {
+        const blobUrl = URL.createObjectURL(file._blob || file);
+        img.src = blobUrl;
+        img.onload = () => URL.revokeObjectURL(blobUrl);
+      }
+      item.appendChild(img);
     } else {
-      // Fallback for blobs without a disk path
-      const blobUrl = URL.createObjectURL(file._blob || file);
-      img.src = blobUrl;
-      img.onload = () => URL.revokeObjectURL(blobUrl);
+      const icon = document.createElement('span');
+      icon.className = 'fp-icon';
+      icon.textContent = getFileIcon(mime);
+      item.appendChild(icon);
     }
-    thumbEl.appendChild(img);
-  } else {
-    thumbEl.innerHTML = `<span class="fp-icon">${getFileIcon(file.type)}</span>`;
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'fp-thumb-remove';
+    removeBtn.title = 'Quitar';
+    removeBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
+    removeBtn.onclick = () => {
+      const idx = _pendingFiles.indexOf(item._file);
+      if (idx !== -1) _pendingFiles.splice(idx, 1);
+      item.remove();
+      if (_pendingFiles.length === 0) hideFilePreviewPanel();
+    };
+    item.appendChild(removeBtn);
+    thumbsEl.appendChild(item);
   }
 
-  const input = $('message-input');
-  input.dataset.origPlaceholder = input.dataset.placeholder || '';
-  input.dataset.placeholder = 'Agregar descripción…';
-  panel.classList.remove('hidden');
+  if (_pendingFiles.length > 0) {
+    const input = $('message-input');
+    input.dataset.origPlaceholder = input.dataset.placeholder || '';
+    input.dataset.placeholder = 'Agregar descripción…';
+    panel.classList.remove('hidden');
+  }
 }
 
 function hideFilePreviewPanel() {
-  _pendingFile = null;
+  _pendingFiles = [];
+  const thumbsEl = $('fp-thumbs');
+  if (thumbsEl) thumbsEl.innerHTML = '';
   $('file-preview-panel').classList.add('hidden');
   const input = $('message-input');
   if (input.dataset.origPlaceholder !== undefined) {
@@ -2051,6 +2099,50 @@ function _mimeFromFile(file) {
   const ext = String(file.name || '').toLowerCase().split('.').pop();
   const map = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', tiff: 'image/tiff', tif: 'image/tiff', heic: 'image/heic', heif: 'image/heif' };
   return map[ext] || '';
+}
+
+async function _sendFilesNow(files, caption) {
+  if (!currentChat || !files.length) return;
+  try {
+    if (caption) $('message-input').textContent = '';
+    for (const file of files) {
+      const mimeType = _mimeFromFile(file);
+      const isInlineImage = mimeType.startsWith('image/') && file.size <= 8 * 1024 * 1024;
+      if (isInlineImage) {
+        await nc.sendInlineImage({
+          filePath: file.path,
+          name: file.name,
+          size: file.size,
+          mimeType,
+          chatId: currentChat.id,
+          chatType: currentChat.type,
+        });
+      } else {
+        await nc.sendFile({
+          filePath: file.path,
+          name: file.name,
+          size: file.size,
+          mimeType,
+          chatId: currentChat.id,
+          chatType: currentChat.type,
+        });
+      }
+    }
+    if (caption) {
+      await nc.sendMessage({
+        content: caption,
+        type: 'text',
+        channelId: currentChat.type === 'channel' ? currentChat.id : null,
+        toUuid: currentChat.type === 'dm' ? currentChat.id : null,
+        replyTo: null,
+      });
+    }
+  } catch (err) {
+    console.error('[sendFiles] error:', err);
+    showToast('Error al enviar el archivo.', 'error');
+  } finally {
+    await loadMessages();
+  }
 }
 
 async function _sendFileNow(file, caption) {
@@ -2509,6 +2601,20 @@ function showToast(msg, type = '') {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function isEmojiOnly(text) {
+  if (!text) return false;
+  const t = text.trim();
+  if (!t || t.length > 20) return false;
+  try {
+    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    const clusters = [...seg.segment(t)];
+    if (clusters.length < 1 || clusters.length > 3) return false;
+    return clusters.every(({ segment: g }) =>
+      /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}‍️⃣]+$/u.test(g)
+    );
+  } catch { return false; }
+}
+
 function escHtml(str) {
   return String(str || '')
     .replace(/&/g, '&amp;')
