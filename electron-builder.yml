@@ -27,11 +27,13 @@ extraResources:
   - from: assets/fonts
     to: fonts
 
-# Native modules must NOT be inside the asar archive
+# Native modules must NOT be inside the asar archive.
+# Use "/**" (not "/**/*") so root-level files like package.json are also
+# unpacked — "/**/*" only matches files one subdirectory level deep.
 asar: true
 asarUnpack:
-  - node_modules/better-sqlite3/**/*
-  - node_modules/robotjs/**/*
+  - "node_modules/better-sqlite3/**"
+  - "node_modules/robotjs/**"
 
 publish:
   provider: github
