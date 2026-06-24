@@ -111,30 +111,32 @@ function handleIncoming(msg) {
         db.saveMessage(record);
       }
     } else if (record.type === 'file') {
-      // Inline image: has base64 data embedded → save to disk, strip from DB content
+      // Inline file (image or other): has base64 data embedded → save to disk, strip from DB content
       try {
         const meta = JSON.parse(record.content || '{}');
-        if (meta.data && meta.mimeType?.startsWith('image/') && meta.name) {
+        if (meta.data && meta.name) {
           const { app: electronApp } = require('electron');
           const nodeFs = require('fs');
           const nodePath = require('path');
           const nodeCrypto = require('crypto');
-          const imgDir = nodePath.join(electronApp.getPath('userData'), 'images');
-          nodeFs.mkdirSync(imgDir, { recursive: true });
-          const localPath = nodePath.join(imgDir, meta.name);
+          const isImg = meta.mimeType?.startsWith('image/');
+          const subDir = isImg ? 'images' : 'files';
+          const fileDir = nodePath.join(electronApp.getPath('userData'), subDir);
+          nodeFs.mkdirSync(fileDir, { recursive: true });
+          const localPath = nodePath.join(fileDir, meta.name);
           nodeFs.writeFileSync(localPath, Buffer.from(meta.data, 'base64'));
           record = { ...record, content: JSON.stringify({ name: meta.name, size: meta.size, mimeType: meta.mimeType }) };
           db.saveMessage(record);
           db.saveFile({
             id: nodeCrypto.randomUUID(), message_id: record.id, original_name: meta.name,
-            local_path: localPath, size: meta.size || 0, mime_type: meta.mimeType || 'image/png',
+            local_path: localPath, size: meta.size || 0, mime_type: meta.mimeType || '',
             sha256: '', timestamp: Date.now(),
           });
         } else {
           db.saveMessage(record);
         }
       } catch (err) {
-        console.warn('[wsServer] inline image save error:', err.message);
+        console.warn('[wsServer] inline file save error:', err.message);
         db.saveMessage(record);
       }
     } else {

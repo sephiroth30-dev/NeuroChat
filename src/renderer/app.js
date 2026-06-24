@@ -2055,10 +2055,23 @@ function addFilesToPreview(newFiles) {
       }
       item.appendChild(img);
     } else {
-      const icon = document.createElement('span');
-      icon.className = 'fp-icon';
-      icon.textContent = getFileIcon(mime);
-      item.appendChild(icon);
+      item.classList.add('fp-file-item');
+      const iconEl = document.createElement('span');
+      iconEl.className = 'fp-icon-lg';
+      iconEl.textContent = getFileIcon(mime);
+      const infoEl = document.createElement('div');
+      infoEl.className = 'fp-file-info';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'fp-file-name';
+      nameEl.textContent = file.name;
+      nameEl.title = file.name;
+      const sizeEl = document.createElement('span');
+      sizeEl.className = 'fp-file-size';
+      sizeEl.textContent = formatSize(file.size);
+      infoEl.appendChild(nameEl);
+      infoEl.appendChild(sizeEl);
+      item.appendChild(iconEl);
+      item.appendChild(infoEl);
     }
 
     const removeBtn = document.createElement('button');
@@ -2107,8 +2120,11 @@ async function _sendFilesNow(files, caption) {
     if (caption) $('message-input').textContent = '';
     for (const file of files) {
       const mimeType = _mimeFromFile(file);
-      const isInlineImage = mimeType.startsWith('image/') && file.size <= 8 * 1024 * 1024;
-      if (isInlineImage) {
+      // Send inline (base64 over WebSocket) for files ≤ 20 MB — avoids P2P TCP issues.
+      // P2P is used only for large files where bandwidth matters more than reliability.
+      const INLINE_LIMIT = 20 * 1024 * 1024;
+      const sendInline = file.size <= INLINE_LIMIT;
+      if (sendInline) {
         await nc.sendInlineImage({
           filePath: file.path,
           name: file.name,
@@ -2150,7 +2166,7 @@ async function _sendFileNow(file, caption) {
   try {
     if (caption) $('message-input').textContent = '';
     const mimeType = _mimeFromFile(file);
-    const isInlineImage = mimeType.startsWith('image/') && file.size <= 8 * 1024 * 1024;
+    const isInlineImage = file.size <= 20 * 1024 * 1024;
     if (isInlineImage) {
       await nc.sendInlineImage({
         filePath: file.path,
