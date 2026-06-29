@@ -723,11 +723,18 @@ function makeFileRow(row, msg, isOutgoing) {
     </div>`;
 
   if (canShowInline) {
-    if (localPath) row.querySelector('img')?.addEventListener('click', () => nc.openFile(localPath));
+    // Open in built-in lightbox — avoids external app issues on Windows
+    row.querySelector('img')?.addEventListener('click', () => {
+      openLightbox(safeLocal, name, localPath);
+    });
   } else if (localPath) {
-    row.querySelector('.file-bubble')?.addEventListener('click', e => {
+    row.querySelector('.file-bubble')?.addEventListener('click', async e => {
       if (e.target.closest('.file-download-btn')) return;
-      nc.openFile(localPath);
+      const result = await nc.openFile(localPath);
+      // If opening fails (e.g. default app broken), reveal in folder as fallback
+      if (result && result.ok === false) {
+        showToast('No se pudo abrir el archivo. Se abrió la carpeta donde está guardado.', 'warning');
+      }
     });
   }
   row.querySelectorAll('.file-download-btn').forEach(btn => {
@@ -1528,6 +1535,37 @@ document.addEventListener('click', e => {
   if (!picker.contains(e.target) && e.target !== $('emoji-btn')) {
     picker.classList.add('hidden');
   }
+});
+
+// ── Image lightbox ────────────────────────────────────────────────────────────
+function openLightbox(src, name, localPath) {
+  const lightbox = $('img-lightbox');
+  const img = $('lightbox-img');
+  img.src = src;
+  img.alt = name || '';
+  $('lightbox-name').textContent = name || '';
+  lightbox.dataset.localPath = localPath || '';
+  lightbox.classList.remove('hidden');
+  document.addEventListener('keydown', _lightboxKeyHandler);
+}
+
+function closeLightbox() {
+  const lightbox = $('img-lightbox');
+  lightbox.classList.add('hidden');
+  $('lightbox-img').src = '';
+  document.removeEventListener('keydown', _lightboxKeyHandler);
+}
+
+function _lightboxKeyHandler(e) {
+  if (e.key === 'Escape') closeLightbox();
+}
+
+// Wire lightbox buttons once DOM is ready
+document.getElementById('lightbox-bg').addEventListener('click', closeLightbox);
+document.getElementById('lightbox-close-btn').addEventListener('click', closeLightbox);
+document.getElementById('lightbox-download-btn').addEventListener('click', () => {
+  const lp = $('img-lightbox').dataset.localPath;
+  if (lp) nc.downloadFile(lp);
 });
 
 // ── Link click handler (delegated on messages container) ─────────────────────

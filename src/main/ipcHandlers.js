@@ -259,7 +259,18 @@ function register() {
 
   ipcMain.handle('file:accept', (_e, transferId) => fileTransfer.accept(transferId));
   ipcMain.handle('file:reject', (_e, transferId) => fileTransfer.reject(transferId));
-  ipcMain.handle('file:open', (_e, localPath) => shell.openPath(localPath));
+  ipcMain.handle('file:open', async (_e, localPath) => {
+    const fs = require('fs');
+    if (!localPath || !fs.existsSync(localPath)) return { ok: false, error: 'Archivo no encontrado' };
+    const result = await shell.openPath(localPath);
+    if (result) {
+      // shell.openPath failed (e.g. default app broken) — reveal in Explorer/Finder as fallback
+      console.warn('[file:open] openPath failed:', result, '— falling back to showItemInFolder');
+      shell.showItemInFolder(localPath);
+      return { ok: false, fallback: true, error: result };
+    }
+    return { ok: true };
+  });
   ipcMain.handle('url:open', (_e, url) => {
     const full = /^https?:\/\//i.test(url) ? url : `https://${url}`;
     return shell.openExternal(full);
