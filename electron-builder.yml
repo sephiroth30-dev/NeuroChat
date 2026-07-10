@@ -45,15 +45,19 @@ win:
   target: nsis
   icon: assets/icon.ico
   artifactName: NeuroChat-Setup-${version}.exe
-  requestedExecutionLevel: asInvoker
+  # requireAdministrator allows GPO to elevate silently without prompting users.
+  # asInvoker caused interactive UAC dialogs that block unattended GPO deployments.
+  requestedExecutionLevel: requireAdministrator
 
 nsis:
-  # Fixed GUID prevents Windows from registering NeuroChat as a different app
-  # across versions. Without this, multiple installs can pile up in Add/Remove Programs.
+  # Fixed GUID so Windows treats every version as the same app — enables silent
+  # upgrades without leaving ghost entries in Add/Remove Programs.
   guid: "D9A7B3C2-4E1F-4A8D-9B0E-2F3C5A6D7E8F"
   oneClick: false
   allowToChangeInstallationDirectory: false
-  perMachine: false
+  # perMachine installs to C:\Program Files\ (requires admin). GPO runs as SYSTEM
+  # and handles elevation automatically — no password dialog shown to users.
+  perMachine: true
   installerIcon: assets/icon.ico
   uninstallerIcon: assets/icon.ico
   createDesktopShortcut: true
