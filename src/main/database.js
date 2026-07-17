@@ -31,17 +31,40 @@ function initialize() {
   _scheduleBackup(dbPath);
 }
 
+// A DB "has data" only when it holds real content (profile or messages).
+// A freshly-created DB with empty tables must NOT count — otherwise it blocks
+// recovery from backups/legacy paths and users lose their history after a
+// reinstall that created an empty schema.
 function _hasData(dbPath) {
   const fs = require('fs');
   if (!fs.existsSync(dbPath)) return false;
   try {
     const tmp = new (require('better-sqlite3'))(dbPath, { readonly: true });
-    const row = tmp.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table'").get();
+    const tables = tmp
+      .prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('messages','my_profile')")
+      .get();
+    let content = 0;
+    if (tables && tables.n === 2) {
+      content += tmp.prepare('SELECT COUNT(*) AS n FROM messages').get().n;
+      content += tmp.prepare('SELECT COUNT(*) AS n FROM my_profile').get().n;
+    }
     tmp.close();
-    return row && row.n > 0;
+    return content > 0;
   } catch {
     return false;
   }
+}
+
+// Backup location OUTSIDE userData: uninstallers (or users clicking "remove
+// app data") wipe %APPDATA%\NeuroChat entirely — a backup living in the same
+// folder dies with the original. This dir survives uninstall/reinstall.
+function _externalBackupPath() {
+  const os = require('os');
+  const base =
+    process.platform === 'win32'
+      ? path.join(os.homedir(), 'AppData', 'Local', 'NeuroChat-Backup')
+      : path.join(app.getPath('appData'), 'NeuroChat-Backup');
+  return path.join(base, 'neurochat.db.bak');
 }
 
 function _tryRecoverFromLegacyPath(currentPath) {
@@ -49,8 +72,11 @@ function _tryRecoverFromLegacyPath(currentPath) {
   const os = require('os');
   const home = os.homedir();
 
-  // Possible legacy userData locations (different casing, Local vs Roaming)
+  // Backups first (most recent data), then legacy userData locations
+  // (different casing, Local vs Roaming)
   const candidates = [
+    currentPath + '.bak',
+    _externalBackupPath(),
     path.join(app.getPath('appData'), 'neurochat', 'neurochat.db'),
     path.join(app.getPath('appData'), 'NeuroChat', 'neurochat.db'),
     path.join(home, 'AppData', 'Local', 'NeuroChat', 'neurochat.db'),
@@ -65,6 +91,10 @@ function _tryRecoverFromLegacyPath(currentPath) {
     if (_hasData(candidate)) {
       try {
         fs.mkdirSync(path.dirname(currentPath), { recursive: true });
+        // Remove stale WAL/SHM from a previous (possibly force-killed) session —
+        // pairing an old WAL with a restored main file corrupts the database.
+        try { fs.unlinkSync(currentPath + '-wal'); } catch {}
+        try { fs.unlinkSync(currentPath + '-shm'); } catch {}
         fs.copyFileSync(candidate, currentPath);
         console.log(`[DB] Recuperado historial desde ${candidate}`);
         return;
@@ -78,8 +108,11 @@ function _tryRecoverFromLegacyPath(currentPath) {
 function _scheduleBackup(dbPath) {
   const fs = require('fs');
   const backupPath = dbPath + '.bak';
+  const externalPath = _externalBackupPath();
 
-  // Write backup immediately, then every 6 hours
+  // Write backups immediately, then every 6 hours. Two copies:
+  //   1. next to the DB (fast local restore)
+  //   2. outside userData (survives uninstall / app-data wipe)
   const doBackup = () => {
     try {
       if (db && _hasData(dbPath)) {
@@ -87,6 +120,12 @@ function _scheduleBackup(dbPath) {
           // Fallback to file copy if SQLite backup API fails
           try { fs.copyFileSync(dbPath, backupPath); } catch {}
         });
+        try {
+          fs.mkdirSync(path.dirname(externalPath), { recursive: true });
+          db.backup(externalPath).catch(() => {
+            try { fs.copyFileSync(dbPath, externalPath); } catch {}
+          });
+        } catch {}
       }
     } catch {}
   };

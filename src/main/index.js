@@ -68,18 +68,25 @@ async function _startup() {
   fileTransfer.start();
   discovery.start();
 
-  // Windows: ensure firewall rules are in place (prompts UAC once if missing)
+  // Windows: check firewall rules. Elevation is attempted AT MOST ONCE per
+  // installation — repeated UAC credential prompts on every launch block
+  // non-admin corporate users. Preferred path: rules deployed via GPO
+  // (see docs/DESPLIEGUE-GPO.md); then this never prompts at all.
   if (process.platform === 'win32') {
     setTimeout(async () => {
       try {
         const diag = require('./diagnostics');
         const ok = await diag.checkFirewallRules();
-        if (!ok) {
-          console.log('[Firewall] Rules missing — requesting elevation to add them');
-          await diag.addFirewallRules();
-          // Re-announce so peers can now reach us
-          discovery.updateAnnounce(database.getProfile() || {});
+        if (ok) return;
+        if (database.getSetting('firewallSetupAttempted')) {
+          console.warn('[Firewall] Reglas ausentes — despliegue por GPO recomendado (no se vuelve a pedir elevación)');
+          return;
         }
+        database.setSetting('firewallSetupAttempted', true);
+        console.log('[Firewall] Rules missing — requesting elevation to add them (single attempt)');
+        await diag.addFirewallRules();
+        // Re-announce so peers can now reach us
+        discovery.updateAnnounce(database.getProfile() || {});
       } catch (err) {
         console.warn('[Firewall] Auto-setup failed:', err.message);
       }

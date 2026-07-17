@@ -27,6 +27,13 @@ extraResources:
   - from: assets/fonts
     to: fonts
 
+# Keep only Spanish/English Chromium locales — drops ~45 unused locale .pak
+# files from the bundle and shrinks both installer and installed footprint.
+electronLanguages:
+  - es
+  - es-419
+  - en-US
+
 # Native modules must NOT be inside the asar archive.
 # Use "/**" (not "/**/*") so root-level files like package.json are also
 # unpacked — "/**/*" only matches files one subdirectory level deep.
@@ -45,9 +52,11 @@ win:
   target: nsis
   icon: assets/icon.ico
   artifactName: NeuroChat-Setup-${version}.exe
-  # requireAdministrator allows GPO to elevate silently without prompting users.
-  # asInvoker caused interactive UAC dialogs that block unattended GPO deployments.
-  requestedExecutionLevel: requireAdministrator
+  # asInvoker + perMachine:false = per-user install in %LOCALAPPDATA%\Programs.
+  # NEVER shows UAC: installs without admin and electron-updater can replace
+  # the app silently in the background. Machine-wide deployment is done via
+  # GPO logon script (runs as the user) — see docs/DESPLIEGUE-GPO.md.
+  requestedExecutionLevel: asInvoker
 
 nsis:
   # Fixed GUID so Windows treats every version as the same app — enables silent
@@ -55,9 +64,13 @@ nsis:
   guid: "D9A7B3C2-4E1F-4A8D-9B0E-2F3C5A6D7E8F"
   oneClick: false
   allowToChangeInstallationDirectory: false
-  # perMachine installs to C:\Program Files\ (requires admin). GPO runs as SYSTEM
-  # and handles elevation automatically — no password dialog shown to users.
-  perMachine: true
+  # Per-user install: no admin rights needed to install or auto-update.
+  # Old per-machine installs in C:\Program Files are removed by the GPO
+  # startup script (scripts/gpo/1-limpieza-startup.bat).
+  perMachine: false
+  # Custom NSIS hooks (kill running instance before upgrade, firewall rules).
+  # Without this line the .nsh file was never compiled into the installer.
+  include: build-resources/installer-script.nsh
   installerIcon: assets/icon.ico
   uninstallerIcon: assets/icon.ico
   createDesktopShortcut: true
