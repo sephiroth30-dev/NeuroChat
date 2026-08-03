@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: ['**']
-    tags-ignore: ['v*'] # releases are handled by release.yml
+    tags-ignore: ['v*'] # releases are handled by build-release.yml
   pull_request:
     branches: [main]
 

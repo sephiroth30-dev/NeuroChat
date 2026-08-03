@@ -210,6 +210,10 @@ function checkTimeouts() {
   let changed = false;
 
   for (const user of store.getOnlineUsers()) {
+    // Already-offline users keep a stale lastSeen forever (setUserOffline
+    // never updates it) — without this guard they'd re-trigger a "timeout"
+    // and a renderer notify every 5s for as long as the app stays open.
+    if (user.isOnline === false) continue;
     if (user.lastSeen && now - user.lastSeen > USER_TIMEOUT) {
       store.setUserOffline(user.uuid);
       db.setUserOffline(user.uuid);

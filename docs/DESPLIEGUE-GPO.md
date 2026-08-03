@@ -16,7 +16,7 @@ silenciosas** y **sin perder el historial de conversaciones**.
 
 **Las versiones ≤ 2.3.7 mezclaron ambos modos y por eso aparecían las
 solicitudes de contraseña y las versiones viejas que no se desinstalaban.**
-Desde v2.3.8 todo es por-usuario y las versiones por-máquina se limpian una
+Desde v2.3.9 todo es por-usuario y las versiones por-máquina se limpian una
 sola vez con el script de inicio.
 
 > Nota: Server 2008 R2 solo puede desplegar software por GPO en formato MSI.
@@ -40,11 +40,11 @@ automáticamente desde los backups (cada 6 horas se refrescan).
 
 ### 1. Publicar el instalador en un recurso compartido
 
-Copia `NeuroChat-Setup-2.3.8.exe` (descargado del Release de GitHub) a una
+Copia `NeuroChat-Setup-2.3.9.exe` (descargado del Release de GitHub) a una
 carpeta compartida con permiso de **lectura para todos los usuarios**, p. ej.:
 
 ```
-\\SERVIDOR\NeuroChat\NeuroChat-Setup-2.3.8.exe
+\\SERVIDOR\NeuroChat\NeuroChat-Setup-2.3.9.exe
 ```
 
 ### 2. Script de inicio de EQUIPO — limpieza (una configuración, corre siempre)
@@ -67,8 +67,8 @@ Es idempotente: puede quedar asignado permanentemente.
 Edita las dos primeras variables de `scripts/gpo/2-instalar-logon.bat`:
 
 ```bat
-set "INSTALADOR=\\SERVIDOR\NeuroChat\NeuroChat-Setup-2.3.8.exe"
-set "VERSION_OBJETIVO=2.3.8"
+set "INSTALADOR=\\SERVIDOR\NeuroChat\NeuroChat-Setup-2.3.9.exe"
+set "VERSION_OBJETIVO=2.3.9"
 ```
 
 **GPMC:** Configuración de usuario → Directivas → Configuración de Windows →
@@ -104,8 +104,8 @@ logon script — eso fuerza la reinstalación en el próximo inicio de sesión.
 
 | Síntoma | Causa | Solución |
 |---|---|---|
-| Error `better-sqlite3\package.json` al iniciar | Instalador viejo (≤2.3.5 original) aún desplegado | Verificar que el .exe del recurso compartido sea ≥ 2.3.8; el startup script elimina la copia dañada de Program Files |
-| Pide contraseña al instalar | Se está ejecutando un instalador viejo por-máquina | Usar el .exe ≥ 2.3.8 (por-usuario, no eleva) |
-| Pide contraseña al abrir la app | Faltan reglas de firewall y la app intenta crearlas | Asignar el startup script (paso 2); desde v2.3.8 solo lo intenta una vez |
+| Error `better-sqlite3\package.json` al iniciar | Instalador viejo (≤2.3.5 original) aún desplegado | Verificar que el .exe del recurso compartido sea ≥ 2.3.9; el startup script elimina la copia dañada de Program Files |
+| Pide contraseña al instalar | Se está ejecutando un instalador viejo por-máquina | Usar el .exe ≥ 2.3.9 (por-usuario, no eleva) |
+| Pide contraseña al abrir la app | Faltan reglas de firewall y la app intenta crearlas | Asignar el startup script (paso 2); desde v2.3.9 se intenta como máximo 3 veces (solo cuenta fallos confirmados) |
 | No aparecen usuarios conectados | Firewall bloquea 45678/45679 | Verificar reglas: `netsh advfirewall firewall show rule name="NeuroChat WS"` |
-| Historial desapareció | BD vacía tras reinstalación | v2.3.8 restaura solo desde `%LOCALAPPDATA%\NeuroChat-Backup`; si no, copiar ese archivo a `%APPDATA%\NeuroChat\neurochat.db` |
+| Historial desapareció | BD vacía tras reinstalación | v2.3.9 restaura solo desde `%LOCALAPPDATA%\NeuroChat-Backup`; si no, copiar ese archivo a `%APPDATA%\NeuroChat\neurochat.db` |

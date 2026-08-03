@@ -68,23 +68,42 @@ async function _startup() {
   fileTransfer.start();
   discovery.start();
 
-  // Windows: check firewall rules. Elevation is attempted AT MOST ONCE per
-  // installation — repeated UAC credential prompts on every launch block
-  // non-admin corporate users. Preferred path: rules deployed via GPO
-  // (see docs/DESPLIEGUE-GPO.md); then this never prompts at all.
+  // Windows: check firewall rules. Elevation is attempted at most 3 times
+  // across restarts (only counted on a CONFIRMED failure, not just an
+  // attempt) — repeated UAC credential prompts on every launch block
+  // non-admin corporate users, but a single transient failure or an
+  // accidental UAC "No" shouldn't permanently disable retries either.
+  // Preferred path: rules deployed via GPO (see docs/DESPLIEGUE-GPO.md);
+  // then this never prompts at all.
+  const FIREWALL_MAX_ATTEMPTS = 3;
   if (process.platform === 'win32') {
     setTimeout(async () => {
       try {
         const diag = require('./diagnostics');
         const ok = await diag.checkFirewallRules();
         if (ok) return;
-        if (database.getSetting('firewallSetupAttempted')) {
-          console.warn('[Firewall] Reglas ausentes — despliegue por GPO recomendado (no se vuelve a pedir elevación)');
+        const attempts = database.getSetting('firewallSetupAttempts') || 0;
+        if (attempts >= FIREWALL_MAX_ATTEMPTS) {
+          console.warn('[Firewall] Reglas ausentes — límite de intentos alcanzado, se recomienda despliegue por GPO (no se vuelve a pedir elevación)');
           return;
         }
-        database.setSetting('firewallSetupAttempted', true);
-        console.log('[Firewall] Rules missing — requesting elevation to add them (single attempt)');
-        await diag.addFirewallRules();
+        console.log(`[Firewall] Rules missing — requesting elevation to add them (intento ${attempts + 1}/${FIREWALL_MAX_ATTEMPTS})`);
+        // addFirewallRules() can also throw (e.g. can't write the temp batch
+        // file) rather than resolve — that must count toward the cap too,
+        // or a hard failure retries the UAC prompt every launch forever.
+        let result;
+        try {
+          [result] = await diag.addFirewallRules();
+        } catch (err) {
+          database.setSetting('firewallSetupAttempts', attempts + 1);
+          console.warn('[Firewall] addFirewallRules threw:', err.message);
+          return;
+        }
+        if (!result?.ok) {
+          database.setSetting('firewallSetupAttempts', attempts + 1);
+          console.warn('[Firewall] Elevation failed or was denied:', result?.error);
+          return;
+        }
         // Re-announce so peers can now reach us
         discovery.updateAnnounce(database.getProfile() || {});
       } catch (err) {

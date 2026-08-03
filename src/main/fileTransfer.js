@@ -42,6 +42,9 @@ function stop() {
     try {
       t.writeStream?.destroy();
     } catch {}
+    try {
+      t.readStream?.destroy();
+    } catch {}
   }
   transfers.clear();
   if (tcpServer) {
@@ -111,6 +114,28 @@ function onSenderSocket(socket) {
   let headerDone = false;
   let transfer = null;
   let readStream = null;
+  // Captured once the header is parsed — needed by timeout/error handlers to
+  // clean up the transfers Map entry (transfer objects don't store their own key).
+  let currentTransferId = null;
+
+  const abortSend = message => {
+    readStream?.destroy();
+    if (currentTransferId) {
+      notify('file:error', { transferId: currentTransferId, message, role: 'sender' });
+      transfers.delete(currentTransferId);
+      currentTransferId = null;
+    }
+  };
+
+  // A peer that connects but never sends the header (or stalls mid-transfer)
+  // would otherwise hold this connection open indefinitely, and leave a
+  // stale 'sending' entry in the transfers Map forever.
+  socket.setTimeout(30_000);
+  socket.on('timeout', () => {
+    console.warn('[fileTransfer] sender socket timeout — cerrando conexión inactiva');
+    socket.destroy();
+    abortSend('Tiempo de espera agotado — el receptor no respondió');
+  });
 
   socket.on('data', chunk => {
     if (headerDone) return; // all further data from socket is ignored (receiver only reads)
@@ -136,8 +161,12 @@ function onSenderSocket(socket) {
     transfer.state = 'sending';
     transfer.socket = socket;
     headerDone = true;
+    currentTransferId = hdr.transferId;
 
     readStream = fs.createReadStream(transfer.filePath, { highWaterMark: CHUNK_SIZE });
+    // Store on the transfer record so stop() can destroy it during shutdown —
+    // otherwise the read keeps running against a dead socket after app quit.
+    transfer.readStream = readStream;
 
     readStream.on('data', buf => {
       transfer.bytesSent += buf.length;
@@ -156,18 +185,19 @@ function onSenderSocket(socket) {
         done: true,
       });
       transfers.delete(hdr.transferId);
+      currentTransferId = null; // completed normally — timeout/error firing afterward is a no-op
     });
 
     readStream.on('error', err => {
       console.error('[fileTransfer] readStream error:', err.message);
       socket.destroy();
-      transfers.delete(hdr.transferId);
+      abortSend(err.message);
     });
   });
 
   socket.on('error', err => {
     console.warn('[fileTransfer] sender socket error:', err.message);
-    readStream?.destroy();
+    abortSend(err.message);
   });
 }
 
@@ -205,17 +235,46 @@ function accept(transferId) {
 
   transfer.state = 'receiving';
 
-  const settings = db.getAllSettings();
-  const downloadDir = settings.downloadDir || path.join(os.homedir(), 'NeuroChat', 'Archivos');
-  fs.mkdirSync(downloadDir, { recursive: true });
+  // downloadDir/writeStream/socket setup can all throw (bad custom download
+  // path, disk full, no permission) — without this guard a failure here left
+  // the transfer stuck at state='receiving' forever with no user feedback.
+  let destPath, socket, writeStream;
+  try {
+    const settings = db.getAllSettings();
+    const downloadDir = settings.downloadDir || path.join(os.homedir(), 'NeuroChat', 'Archivos');
+    fs.mkdirSync(downloadDir, { recursive: true });
 
-  const destPath = uniquePath(downloadDir, transfer.name);
-  transfer.destPath = destPath;
+    destPath = uniquePath(downloadDir, transfer.name);
+    transfer.destPath = destPath;
 
-  const socket = net.connect(FILE_PORT, peer.ip);
-  const writeStream = fs.createWriteStream(destPath);
+    socket = net.connect(FILE_PORT, peer.ip);
+    writeStream = fs.createWriteStream(destPath);
+  } catch (err) {
+    console.error('[fileTransfer] accept setup failed:', err.message);
+    // net.connect() may have already succeeded before createWriteStream threw —
+    // without this the half-created socket is orphaned, connected forever.
+    try { socket?.destroy(); } catch {}
+    notify('file:error', { transferId, message: err.message });
+    transfers.delete(transferId);
+    return;
+  }
   transfer.socket = socket;
   transfer.writeStream = writeStream;
+
+  // A peer that never connects or stalls mid-transfer would otherwise leave
+  // this stuck at 'receiving' forever with no cleanup path.
+  socket.setTimeout(30_000);
+
+  let failed = false;
+  const fail = message => {
+    if (failed) return; // guard against socket + writeStream both erroring
+    failed = true;
+    socket.destroy();
+    writeStream.destroy();
+    fs.unlink(destPath, () => {});
+    notify('file:error', { transferId, message });
+    transfers.delete(transferId);
+  };
 
   socket.once('connect', () => {
     // Send transfer ID header so sender knows which transfer this is
@@ -230,6 +289,7 @@ function accept(transferId) {
   });
 
   socket.on('end', () => {
+    if (failed) return;
     writeStream.end(() => {
       transfer.state = 'done';
 
@@ -257,12 +317,19 @@ function accept(transferId) {
     });
   });
 
+  socket.on('timeout', () => {
+    console.warn('[fileTransfer] receiver socket timeout — peer inactivo');
+    fail('Tiempo de espera agotado — el remitente no respondió');
+  });
+
   socket.on('error', err => {
     console.error('[fileTransfer] receiver socket error:', err.message);
-    writeStream.destroy();
-    fs.unlink(destPath, () => {});
-    notify('file:error', { transferId, message: err.message });
-    transfers.delete(transferId);
+    fail(err.message);
+  });
+
+  writeStream.on('error', err => {
+    console.error('[fileTransfer] receiver writeStream error:', err.message);
+    fail(err.message);
   });
 }
 
