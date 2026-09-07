@@ -398,17 +398,34 @@ function appendDMItem(container, user, isOffline) {
 }
 
 // ── Unread badge management ───────────────────────────────────────────────────
+
+// Patch only the affected counters. This used to rebuild BOTH sidebar lists
+// (one avatar SVG per user), fire an extra getLastDMActivity() IPC and redraw
+// a canvas — on every background message and every chat open.
 function updateBadge() {
   const total = Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0);
-  const dataUrl = total > 0 ? createBadgeDataUrl(total) : null;
-  nc.setBadge(total, dataUrl);
-  // Re-render sidebar lists to reflect new counts
-  if (cachedChannels.length) renderChannelList(cachedChannels);
-  if (cachedUsers.length) {
-    nc.getLastDMActivity().then(activity => {
-      renderDMList(cachedUsers, activity || {});
-    });
+  nc.setBadge(total, total > 0 ? createBadgeDataUrl(total) : null);
+
+  document.querySelectorAll('#channel-list .nav-item').forEach(li => {
+    paintUnreadBadge(li, unreadCounts.get(li.dataset.id) || 0);
+  });
+  document.querySelectorAll('#dm-list .nav-item').forEach(li => {
+    paintUnreadBadge(li, unreadCounts.get(li.dataset.uuid) || 0);
+  });
+}
+
+function paintUnreadBadge(li, count) {
+  let badge = li.querySelector('.unread-badge');
+  if (count <= 0) {
+    badge?.remove();
+    return;
   }
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'unread-badge';
+    li.appendChild(badge);
+  }
+  badge.textContent = count > 99 ? '99+' : String(count);
 }
 
 function createBadgeDataUrl(count) {
@@ -513,20 +530,31 @@ async function loadMessages() {
 
   const messages = await nc.getMessages(opts);
   renderMessages(messages);
+  sendPendingReadReceipts(messages);
+}
 
-  // Send read receipts for unread incoming messages
-  if (myProfile) {
-    messages
-      .filter(
-        m => !m.deleted && m.from_uuid !== myProfile.uuid && !m.read_by?.includes(myProfile.uuid)
-      )
-      .forEach(m => nc.markRead(m.id, m.from_uuid));
-  }
+// Read receipts for unread incoming messages. One IPC round trip and one DB
+// transaction for the whole page — the main process still emits a READ_RECEIPT
+// per message, so the sender's ticks update exactly as before. Previously this
+// was one IPC (and one read-modify-write) per message, up to 50 per chat open.
+function sendPendingReadReceipts(messages) {
+  if (!myProfile) return;
+  const unread = messages.filter(
+    m => !m.deleted && m.from_uuid !== myProfile.uuid && !m.read_by?.includes(myProfile.uuid)
+  );
+  if (!unread.length) return;
+  nc.markReadBatch(unread.map(m => ({ id: m.id, fromUuid: m.from_uuid }))).catch(() => {});
 }
 
 // ── Message rendering ─────────────────────────────────────────────────────────
+
+// Full rebuild. Only for an actual chat switch / initial load — every other
+// event appends or patches a single row (see appendMessage / patchMessage),
+// because rebuilding ~700 DOM nodes per incoming message caused the flicker,
+// the scroll jump and the lost text selection users were complaining about.
 function renderMessages(messages) {
   const container = $('messages-inner');
+  releaseAudioElements();
   container.innerHTML = '';
 
   let lastDate = null;
@@ -546,21 +574,110 @@ function renderMessages(messages) {
     lastSender = msg.from_uuid;
   });
 
+  hideNewMsgsPill();
   scrollMessagesToBottom();
+}
+
+// Is the user reading live at the bottom, or scrolled up into history?
+function isNearBottom() {
+  const list = $('message-list');
+  if (!list) return true;
+  return list.scrollHeight - list.scrollTop - list.clientHeight < 120;
+}
+
+// Append exactly one row, reusing the same helpers renderMessages uses.
+// Falls back to a full rebuild when a message arrives out of order, so date
+// separators and sender grouping can't drift.
+function appendMessage(msg) {
+  const container = $('messages-inner');
+  if (!container) return;
+
+  const last = container.lastElementChild;
+  const lastTs = last?.dataset?.ts ? Number(last.dataset.ts) : 0;
+  if (lastTs && msg.timestamp < lastTs) {
+    loadMessages();
+    return;
+  }
+
+  const stickToBottom = isNearBottom();
+
+  const msgDate = new Date(msg.timestamp).toDateString();
+  const lastDate = lastTs ? new Date(lastTs).toDateString() : null;
+  let lastSender = last?.dataset?.from || null;
+  if (msgDate !== lastDate) {
+    container.appendChild(makeDateSeparator(msg.timestamp));
+    lastSender = null;
+  }
+
+  const isOutgoing = msg.from_uuid === myProfile?.uuid;
+  const grouped = !isOutgoing && msg.from_uuid === lastSender;
+  container.appendChild(makeMsgRow(msg, isOutgoing, grouped));
+
+  // Never yank the view away from someone reading older messages
+  if (stickToBottom || isOutgoing) {
+    scrollMessagesToBottom();
+    hideNewMsgsPill();
+  } else {
+    showNewMsgsPill();
+  }
+}
+
+// Replace a single existing row in place (edited / deleted / reaction / file)
+function patchMessage(msg) {
+  const container = $('messages-inner');
+  const row = container?.querySelector(`.msg-row[data-id="${CSS.escape(String(msg.id))}"]`);
+  if (!row) return false;
+  const isOutgoing = msg.from_uuid === myProfile?.uuid;
+  const grouped = row.classList.contains('grouped');
+  row.replaceWith(makeMsgRow(msg, isOutgoing, grouped));
+  return true;
+}
+
+// Refresh one message from the DB and patch it in place; falls back to a full
+// reload only if that row isn't currently on screen.
+async function refreshMessage(messageId) {
+  if (!currentChat || !messageId) return;
+  const msg = await nc.getMessage(messageId).catch(() => null);
+  if (msg && patchMessage(msg)) return;
+  await loadMessages();
+}
+
+// ── "Nuevos mensajes" pill ────────────────────────────────────────────────────
+
+let _newMsgsCount = 0;
+
+function showNewMsgsPill() {
+  _newMsgsCount += 1;
+  let pill = $('new-msgs-pill');
+  if (!pill) {
+    pill = document.createElement('button');
+    pill.id = 'new-msgs-pill';
+    pill.className = 'new-msgs-pill';
+    pill.addEventListener('click', () => {
+      scrollMessagesToBottom();
+      hideNewMsgsPill();
+    });
+    $('message-list')?.appendChild(pill);
+  }
+  pill.textContent =
+    _newMsgsCount === 1 ? '1 mensaje nuevo ↓' : `${_newMsgsCount} mensajes nuevos ↓`;
+  pill.style.display = '';
+}
+
+function hideNewMsgsPill() {
+  _newMsgsCount = 0;
+  const pill = $('new-msgs-pill');
+  if (pill) pill.style.display = 'none';
 }
 
 function scrollMessagesToBottom() {
   const list = $('message-list');
   if (!list) return;
-
-  const pin = () => {
+  // Single layout pass — the old version forced layout three times
+  // (immediately, on rAF, and again 80 ms later) on every render.
+  requestAnimationFrame(() => {
     list.scrollTop = list.scrollHeight;
-    $('messages-inner').lastElementChild?.scrollIntoView({ block: 'end', behavior: 'instant' });
-  };
-
-  pin();
-  requestAnimationFrame(pin);
-  setTimeout(pin, 80);
+  });
 }
 
 function fileUrlFromPath(localPath) {
@@ -603,6 +720,10 @@ function makeMsgRow(msg, isOutgoing, grouped) {
   const row = document.createElement('div');
   row.className = `msg-row${isOutgoing ? ' outgoing' : ''}${grouped ? ' grouped' : ''}`;
   row.dataset.id = msg.id;
+  // Read back by appendMessage() to decide date separators / sender grouping
+  // without re-reading the whole list.
+  row.dataset.ts = String(msg.timestamp || 0);
+  row.dataset.from = msg.from_uuid || '';
 
   if (msg.deleted) {
     row.innerHTML = `
@@ -672,10 +793,13 @@ function makeFileRow(row, msg, isOutgoing) {
     return { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', tiff: 'image/tiff', tif: 'image/tiff' }[ext] || '';
   })();
   const isImage = mimeType.startsWith('image/');
+  // msg.hasInlineData: the row still carries base64 in the DB (pre-2.4.0), but
+  // the payload is no longer shipped over IPC — it's fetched on first view.
+  const needsInline = !localPath && isImage && (msg.hasInlineData || !!meta.data);
   const safeLocal = localPath
     ? fileUrlFromPath(localPath)
     : (isImage && meta.data ? `data:${mimeType};base64,${meta.data}` : '');
-  const canShowInline = isImage && (localPath || (meta.data));
+  const canShowInline = isImage && (localPath || meta.data || msg.hasInlineData);
 
   const downloadBtn = localPath
     ? `<button class="file-download-btn" title="Guardar copia" data-path="${escHtml(localPath)}">
@@ -687,7 +811,8 @@ function makeFileRow(row, msg, isOutgoing) {
   if (canShowInline) {
     inner = `
       <div class="img-bubble">
-        <img src="${safeLocal}" alt="${escHtml(name)}" loading="lazy" />
+        <img src="${safeLocal}" alt="${escHtml(name)}" loading="lazy"
+             ${needsInline && !safeLocal ? `data-needs-inline="${escHtml(String(msg.id))}"` : ''} />
         ${downloadBtn}
       </div>`;
   } else {
@@ -723,9 +848,13 @@ function makeFileRow(row, msg, isOutgoing) {
     </div>`;
 
   if (canShowInline) {
+    const img = row.querySelector('img');
+    // Legacy row: bytes live in the DB but weren't shipped over IPC. Load them
+    // only when the image actually scrolls into view.
+    if (img?.dataset.needsInline) observeInlineImage(img);
     // Open in built-in lightbox — avoids external app issues on Windows
-    row.querySelector('img')?.addEventListener('click', () => {
-      openLightbox(safeLocal, name, localPath);
+    img?.addEventListener('click', () => {
+      openLightbox(img.src || safeLocal, name, localPath || img.dataset.localPath || null);
     });
   } else if (localPath) {
     row.querySelector('.file-bubble')?.addEventListener('click', async e => {
@@ -785,43 +914,118 @@ function makeAudioRow(row, msg, isOutgoing) {
   _addMsgActionBtn(row, msg, isOutgoing);
 
   if (audioSrc) {
-    const audio = new Audio(audioSrc);
     const playBtn = row.querySelector(`#play-${msg.id}`);
     const durEl = row.querySelector(`#dur-${msg.id}`);
     const PLAY_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
     const PAUSE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
     const fmt = s => `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
-    audio.onloadedmetadata = () => {
-      if (Number.isFinite(audio.duration)) durEl.textContent = fmt(audio.duration);
-    };
-    audio.onerror = () => {
-      playBtn.disabled = true;
-      durEl.textContent = '--:--';
-      showToast('No se pudo reproducir esta nota de voz', 'error');
-    };
+
+    // Show the stored duration if we have it, so the common case needs no
+    // media element at all. The <audio> is created on first play and cached —
+    // previously every row built one eagerly, on every single re-render, and
+    // none of them were ever released.
+    if (Number.isFinite(meta.duration) && meta.duration > 0) {
+      durEl.textContent = fmt(meta.duration);
+    }
+
     let playing = false;
     playBtn.onclick = async () => {
+      const audio = getAudioElement(msg.id, audioSrc, { durEl, playBtn, fmt });
+      if (!audio) return;
       if (playing) {
-        audio.pause(); playBtn.innerHTML = PLAY_ICON; playing = false;
-      } else {
-        try {
-          await audio.play();
-          playBtn.innerHTML = PAUSE_ICON;
-          playing = true;
-          audio.ontimeupdate = () => { durEl.textContent = fmt(audio.currentTime); };
-          audio.onended = () => {
-            playing = false;
-            playBtn.innerHTML = PLAY_ICON;
-            audio.currentTime = 0;
-            if (Number.isFinite(audio.duration)) durEl.textContent = fmt(audio.duration);
-          };
-        } catch {
-          showToast('No se pudo reproducir esta nota de voz', 'error');
-        }
+        audio.pause();
+        playBtn.innerHTML = PLAY_ICON;
+        playing = false;
+        return;
+      }
+      try {
+        await audio.play();
+        playBtn.innerHTML = PAUSE_ICON;
+        playing = true;
+        audio.ontimeupdate = () => { durEl.textContent = fmt(audio.currentTime); };
+        audio.onended = () => {
+          playing = false;
+          playBtn.innerHTML = PLAY_ICON;
+          audio.currentTime = 0;
+          if (Number.isFinite(audio.duration)) durEl.textContent = fmt(audio.duration);
+        };
+      } catch {
+        showToast('No se pudo reproducir esta nota de voz', 'error');
       }
     };
   }
   return row;
+}
+
+// ── Voice-note audio elements (created on demand, released on chat switch) ────
+
+const _audioElements = new Map(); // msgId → HTMLAudioElement
+
+function getAudioElement(msgId, src, { durEl, playBtn, fmt }) {
+  let audio = _audioElements.get(msgId);
+  if (audio) return audio;
+  audio = new Audio(src);
+  audio.onloadedmetadata = () => {
+    if (Number.isFinite(audio.duration)) durEl.textContent = fmt(audio.duration);
+  };
+  audio.onerror = () => {
+    playBtn.disabled = true;
+    durEl.textContent = '--:--';
+    showToast('No se pudo reproducir esta nota de voz', 'error');
+  };
+  _audioElements.set(msgId, audio);
+  return audio;
+}
+
+function releaseAudioElements() {
+  _audioElements.forEach(audio => {
+    try {
+      audio.pause();
+      audio.src = '';
+    } catch {}
+  });
+  _audioElements.clear();
+}
+
+// ── Lazy loading of pre-2.4.0 inline images ───────────────────────────────────
+// Older messages store the whole file as base64 inside messages.content. That
+// payload is no longer sent with every messages:get, so it's fetched per image
+// the first time it becomes visible; the main process also writes it to disk
+// on that first fetch, so subsequent loads use localPath instead.
+
+let _inlineObserver = null;
+
+function observeInlineImage(img) {
+  if (!('IntersectionObserver' in window)) {
+    loadInlineImage(img);
+    return;
+  }
+  if (!_inlineObserver) {
+    _inlineObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        _inlineObserver.unobserve(entry.target);
+        loadInlineImage(entry.target);
+      });
+    }, { root: document.getElementById('message-list'), rootMargin: '200px' });
+  }
+  _inlineObserver.observe(img);
+}
+
+async function loadInlineImage(img) {
+  const messageId = img.dataset.needsInline;
+  if (!messageId) return;
+  delete img.dataset.needsInline;
+  try {
+    const payload = await nc.getInlineData(messageId);
+    if (!payload?.data) return;
+    if (payload.localPath) img.dataset.localPath = payload.localPath;
+    img.src = payload.localPath
+      ? fileUrlFromPath(payload.localPath)
+      : `data:${payload.mimeType || 'image/png'};base64,${payload.data}`;
+  } catch (err) {
+    console.warn('[inline-image] no se pudo cargar:', err?.message);
+  }
 }
 
 function getFileIcon(mimeType = '') {
@@ -892,7 +1096,7 @@ function showContextMenu(e, msg, isOutgoing) {
     btn.onclick = async () => {
       removeContextMenu();
       if (i === QUICK_REACTIONS.length) showReactionPicker(e, msg);
-      else { await nc.sendReaction(msg.id, emoji); await loadMessages(); }
+      else { await nc.sendReaction(msg.id, emoji); await refreshMessage(msg.id); }
     };
     pill.appendChild(btn);
   });
@@ -1302,7 +1506,7 @@ $('cancel-edit-btn').onclick = cancelEdit;
 // ── Delete ────────────────────────────────────────────────────────────────────
 async function deleteMessage(msg) {
   await nc.deleteMessage(msg.id);
-  await loadMessages();
+  await refreshMessage(msg.id);
 }
 
 // ── Pin ───────────────────────────────────────────────────────────────────────
@@ -1338,7 +1542,7 @@ function showReactionPicker(e, msg) {
     btn.onclick = async () => {
       picker.remove();
       await nc.sendReaction(msg.id, emoji);
-      await loadMessages();
+      await refreshMessage(msg.id);
     };
     picker.appendChild(btn);
   });
@@ -1358,10 +1562,11 @@ async function sendMessage() {
   input.textContent = '';
 
   if (editingId) {
-    await nc.editMessage(editingId, content);
+    const editedId = editingId;
+    await nc.editMessage(editedId, content);
     editingId = null;
     $('edit-preview').classList.add('hidden');
-    await loadMessages();
+    await refreshMessage(editedId);
     return;
   }
 
@@ -1378,8 +1583,20 @@ async function sendMessage() {
     $('reply-preview').classList.add('hidden');
   }
 
-  await nc.sendMessage(msg);
-  await loadMessages();
+  // The handler returns the saved message, so we can append it directly
+  // instead of re-reading and re-rendering the entire conversation.
+  const saved = await nc.sendMessage(msg);
+  if (saved) {
+    appendMessage({
+      ...saved,
+      sender_name: myProfile?.name || '',
+      color: myProfile?.color || '#4A9E8F',
+      read_by: [],
+      reactions: [],
+    });
+  } else {
+    await loadMessages();
+  }
 }
 
 // ── Emoji picker ──────────────────────────────────────────────────────────────
@@ -1609,13 +1826,16 @@ function bindEvents() {
     }
   });
 
-  // Typing indicator with debounce
-  let typingTimer = null;
+  // Typing indicator, throttled to one broadcast every 2 s. The previous
+  // "debounce" set a timer to an empty function, so it did nothing: every
+  // single keystroke was broadcast to every peer on the network.
+  let lastTypingSent = 0;
   $('message-input').addEventListener('input', () => {
     if (!currentChat) return;
-    clearTimeout(typingTimer);
+    const now = Date.now();
+    if (now - lastTypingSent < 2000) return;
+    lastTypingSent = now;
     nc.sendTyping({ chatId: currentChat.id, type: currentChat.type });
-    typingTimer = setTimeout(() => {}, 2000);
   });
 
   $('send-btn').onclick = () => {
@@ -1850,15 +2070,16 @@ function bindEvents() {
     searchTimer = setTimeout(() => runSearch(e.target.value), 300);
   });
 
-  window.addEventListener('focus', async () => {
-    _audioCtx?.resume?.().catch(() => {});
-    if (currentChat) await loadMessages();
-  });
-
+  // Only ONE re-sync path: 'focus' and 'visibilitychange' both fire on every
+  // alt-tab, so having both meant two full list rebuilds per window focus.
+  let _lastSync = 0;
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState !== 'visible') return;
     _audioCtx?.resume?.().catch(() => {});
-    if (currentChat) await loadMessages();
+    if (!currentChat) return;
+    if (Date.now() - _lastSync < 2000) return;
+    _lastSync = Date.now();
+    await loadMessages();
   });
 }
 
@@ -1874,7 +2095,9 @@ function subscribeIPCEvents() {
     const isCurrentChannel = currentChat?.type === 'channel' && msg.channel_id === currentChat.id;
     const isCurrentDM = currentChat?.type === 'dm' && msg.from_uuid === currentChat.id;
     if (isCurrentChannel || isCurrentDM) {
-      await loadMessages();
+      // Append one row instead of rebuilding the whole list
+      appendMessage(msg);
+      sendPendingReadReceipts([msg]);
     } else {
       // Increment unread counter for this chat
       const chatId = msg.channel_id || msg.from_uuid;
@@ -1899,14 +2122,15 @@ function subscribeIPCEvents() {
     navigateToChat(chatId, chatType);
   });
 
-  nc.on('message:edited', async () => {
-    if (currentChat) await loadMessages();
+  // Patch the single affected row instead of rebuilding the whole list
+  nc.on('message:edited', async data => {
+    if (currentChat) await refreshMessage(data?.id);
   });
-  nc.on('message:deleted', async () => {
-    if (currentChat) await loadMessages();
+  nc.on('message:deleted', async data => {
+    if (currentChat) await refreshMessage(data?.id);
   });
-  nc.on('message:reaction', async () => {
-    if (currentChat) await loadMessages();
+  nc.on('message:reaction', async data => {
+    if (currentChat) await refreshMessage(data?.messageId);
   });
 
   nc.on('typing:incoming', ({ name, chatId }) => {
@@ -1962,8 +2186,9 @@ function subscribeIPCEvents() {
   });
   nc.on('file:progress', data => updateTransferProgress(data));
   nc.on('file:complete', async data => {
-    // Reload messages so the file bubble becomes clickable with localPath
-    if (currentChat) await loadMessages();
+    // Patch just this bubble so it becomes clickable with localPath
+    if (currentChat && data?.messageId) await refreshMessage(data.messageId);
+    else if (currentChat) await loadMessages();
     showToast(`✓ ${data.name} descargado`);
   });
   nc.on('file:rejected', () => {
@@ -1980,14 +2205,17 @@ function subscribeIPCEvents() {
   });
 
   nc.on('remote:session-accepted', () => {
+    clearRemoteRequestPending();
     showToast('Solicitud aceptada — abriendo sesión remota…', 'success');
   });
 
   nc.on('remote:session-rejected', () => {
+    clearRemoteRequestPending();
     showToast('El usuario rechazó la solicitud de soporte remoto.', 'error');
   });
 
   nc.on('remote:session-ended', () => {
+    clearRemoteRequestPending();
     showToast('Sesión remota terminada.', 'info');
   });
 
@@ -2011,10 +2239,26 @@ function subscribeIPCEvents() {
 
 // ── Remote desktop ────────────────────────────────────────────────────────────
 
+// Pending remote-support request: without this the requester got a single
+// toast and then silence forever if the peer never answered.
+let _remoteRequestTimer = null;
+let _remoteRequestPending = false;
+
+function clearRemoteRequestPending() {
+  if (_remoteRequestTimer) clearTimeout(_remoteRequestTimer);
+  _remoteRequestTimer = null;
+  _remoteRequestPending = false;
+}
+
 async function startRemoteSession(peerUuid, peerName) {
   const peer = cachedUsers.find(u => u.uuid === peerUuid);
   if (!peer || peer.isOnline === false) {
     showToast(`${peerName} no está disponible para soporte remoto.`, 'error');
+    return;
+  }
+
+  if (_remoteRequestPending) {
+    showToast('Ya hay una solicitud de soporte remoto en curso.', 'info');
     return;
   }
 
@@ -2024,6 +2268,12 @@ async function startRemoteSession(peerUuid, peerName) {
     return;
   }
   showToast(`Solicitud enviada a ${peerName}. Esperando respuesta…`, 'info');
+
+  _remoteRequestPending = true;
+  _remoteRequestTimer = setTimeout(() => {
+    clearRemoteRequestPending();
+    showToast(`${peerName} no respondió a la solicitud de soporte remoto.`, 'error');
+  }, 45_000);
 }
 
 function showRemoteRequestModal(msg) {

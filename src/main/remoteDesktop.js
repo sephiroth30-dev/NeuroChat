@@ -148,10 +148,18 @@ function _registerIPC() {
     return { ok: true };
   });
 
-  // Either side ends session
-  ipcMain.handle('remote:end', (_e, { sessionId }) => {
-    _endSession(sessionId, true);
+  // Either side ends session. keepWindow lets the viewer tear down the session
+  // but stay open to display an error the user can actually read.
+  ipcMain.handle('remote:end', (_e, { sessionId, keepWindow, reason }) => {
+    _endSession(sessionId, true, { keepViewerWindow: !!keepWindow, reason: reason || null });
     return { ok: true };
+  });
+
+  // Close a remote window explicitly. Needed because once the session is gone
+  // _endSession() early-returns, so it can no longer close the window for us.
+  ipcMain.on('remote:closeWindow', _e => {
+    const win = BrowserWindow.fromWebContents(_e.sender);
+    if (win && !win.isDestroyed()) win.destroy();
   });
 
   // Relay WebRTC signaling (SDP + ICE) from a remote window to WS peer
@@ -315,7 +323,11 @@ function _createViewerWindow(sessionId, peerName, peerIp, screenW, screenH) {
 
 // ── Session lifecycle ─────────────────────────────────────────────────────────
 
-function _endSession(sessionId, notify) {
+// opts.keepViewerWindow: tear the session down but leave the viewer window
+// alive so it can show the user WHY it failed. Without this, _endWithError()
+// in remote-viewer.js rendered the error and immediately destroyed the very
+// window displaying it — the user only ever saw "Conectando…" then nothing.
+function _endSession(sessionId, notify, opts = {}) {
   const session = sessions.get(sessionId);
   if (!session) return;
   sessions.delete(sessionId);
@@ -329,13 +341,16 @@ function _endSession(sessionId, notify) {
         sessionId,
         fromUuid: profile.uuid,
         toUuid: session.peerUuid,
+        reason: opts.reason || null,
       });
     }
   }
 
   _signalingQueue.delete(sessionId);
   if (session.hostWin && !session.hostWin.isDestroyed()) session.hostWin.destroy();
-  if (session.viewerWin && !session.viewerWin.isDestroyed()) session.viewerWin.destroy();
+  if (!opts.keepViewerWindow && session.viewerWin && !session.viewerWin.isDestroyed()) {
+    session.viewerWin.destroy();
+  }
 }
 
 // ── WebSocket signaling handler (called by wsServer.handleIncoming) ───────────
@@ -397,14 +412,17 @@ function handleSignaling(msg) {
 
   if (type === 'REMOTE_END') {
     const session = sessions.get(sessionId);
+    const reason = msg.reason || null;
     if (session?.hostWin && !session.hostWin.isDestroyed()) {
-      session.hostWin.webContents.send('remote:session-ended', { sessionId });
+      session.hostWin.webContents.send('remote:session-ended', { sessionId, reason });
     }
     if (session?.viewerWin && !session.viewerWin.isDestroyed()) {
-      session.viewerWin.webContents.send('remote:session-ended', { sessionId });
+      session.viewerWin.webContents.send('remote:session-ended', { sessionId, reason });
     }
-    _endSession(sessionId, false);
-    _notifyMainWindows('remote:session-ended', { sessionId });
+    // With a reason, keep the viewer open so it can render the explanation —
+    // its own 'remote:session-ended' handler decides whether to close.
+    _endSession(sessionId, false, { keepViewerWindow: !!reason });
+    _notifyMainWindows('remote:session-ended', { sessionId, reason });
     return;
   }
 

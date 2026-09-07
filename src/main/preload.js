@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('neurochat', {
 
   // Messages
   getMessages: opts => ipcRenderer.invoke('messages:get', opts),
+  // Fetch a legacy message's inline base64 payload on demand (see messages:get)
+  getInlineData: messageId => ipcRenderer.invoke('message:getInlineData', messageId),
+  getMessage: messageId => ipcRenderer.invoke('messages:getOne', messageId),
   sendMessage: msg => ipcRenderer.invoke('messages:send', msg),
   sendBroadcast: msg => ipcRenderer.invoke('messages:broadcast', msg),
   editMessage: (id, content) => ipcRenderer.invoke('messages:edit', id, content),
@@ -70,6 +73,9 @@ contextBridge.exposeInMainWorld('neurochat', {
 
   // Read receipts
   markRead: (messageId, senderUuid) => ipcRenderer.invoke('read:mark', { messageId, senderUuid }),
+  // Mark many messages read in one transaction and emit their READ_RECEIPTs.
+  // messages: [{ id, fromUuid }]
+  markReadBatch: messages => ipcRenderer.invoke('messages:markReadBatch', { messages }),
 
   // App badge (taskbar / dock)
   setBadge: (count, dataUrl) => ipcRenderer.invoke('app:setBadge', count, dataUrl),

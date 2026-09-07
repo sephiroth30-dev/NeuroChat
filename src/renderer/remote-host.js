@@ -54,7 +54,7 @@ async function init() {
 
   if (!sources?.length) {
     console.error('[remote-host] No screen sources — Screen Recording permission denied');
-    await remoteHost.endSession(SESSION_ID).catch(() => {});
+    await remoteHost.endSession(SESSION_ID, 'sin-permiso-captura').catch(() => {});
     window.close();
     return;
   }
@@ -78,7 +78,7 @@ async function init() {
     }
   } catch (err) {
     console.error('[remote-host] getUserMedia failed:', err);
-    await remoteHost.endSession(SESSION_ID).catch(() => {});
+    await remoteHost.endSession(SESSION_ID, 'captura-fallida').catch(() => {});
     window.close();
     return;
   }

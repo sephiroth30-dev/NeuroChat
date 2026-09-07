@@ -318,6 +318,39 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
               <small id="s-remote-domain-info" style="color:var(--nc-text-2);padding:0 4px"></small>
             </div>
           </div>
+
+          <div class="card" style="margin-top:12px">
+            <div class="settings-row" style="padding-bottom:4px">
+              <div class="settings-row-label">
+                <span>Servidor TURN (redes distintas)</span>
+                <small>
+                  Solo hace falta para dar soporte entre redes diferentes (otra sede, VPN,
+                  casa). En la misma red local se puede dejar vacío.
+                </small>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-label"><span>Servidor</span></div>
+              <input class="form-input" id="s-turn-url" type="text"
+                     placeholder="turn:servidor.ejemplo.com:3478" style="max-width:280px" />
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-label"><span>Usuario</span></div>
+              <input class="form-input" id="s-turn-user" type="text"
+                     autocomplete="off" style="max-width:280px" />
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-label"><span>Contraseña</span></div>
+              <input class="form-input" id="s-turn-cred" type="password"
+                     autocomplete="new-password" style="max-width:280px" />
+            </div>
+            <div class="settings-row" style="padding-top:0">
+              <small style="color:var(--nc-text-2);padding:0 4px">
+                Los tres campos son obligatorios para que TURN se active. Sin un servidor
+                TURN, el soporte remoto entre redes distintas no podrá conectar.
+              </small>
+            </div>
+          </div>
         </div>
 
         <div class="settings-section">
@@ -530,6 +563,18 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
   const remoteModeEl = container.querySelector('#s-remote-mode');
   remoteModeEl.value = settings.remoteSupportMode || 'ask';
   remoteModeEl.onchange = e => nc.saveSettings({ remoteSupportMode: e.target.value });
+
+  // TURN credentials — consumed by remoteDesktop.js getIceServers(). All three
+  // must be set for TURN to be added to the ICE config.
+  const turnUrlEl  = container.querySelector('#s-turn-url');
+  const turnUserEl = container.querySelector('#s-turn-user');
+  const turnCredEl = container.querySelector('#s-turn-cred');
+  turnUrlEl.value  = settings.turnUrl || '';
+  turnUserEl.value = settings.turnUsername || '';
+  turnCredEl.value = settings.turnCredential || '';
+  turnUrlEl.onchange  = e => nc.saveSettings({ turnUrl: e.target.value.trim() });
+  turnUserEl.onchange = e => nc.saveSettings({ turnUsername: e.target.value.trim() });
+  turnCredEl.onchange = e => nc.saveSettings({ turnCredential: e.target.value });
 
   const domainInfoEl = container.querySelector('#s-remote-domain-info');
   const remoteDomain = settings.remoteDomain || '';

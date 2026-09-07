@@ -83,6 +83,11 @@ function handleIncoming(msg) {
       db.restoreConversation(record.private_chat_uuid);
     }
 
+    // Path of the file saved to disk, if any. Included in the renderer event so
+    // it can render the bubble straight from the payload — the renderer appends
+    // a single row now instead of reloading the whole conversation.
+    let savedLocalPath = null;
+
     // For incoming audio: extract base64, save to disk, strip data from DB content
     if (record.type === 'audio') {
       try {
@@ -96,6 +101,7 @@ function handleIncoming(msg) {
           nodeFs.mkdirSync(audioDir, { recursive: true });
           const localPath = nodePath.join(audioDir, meta.name);
           nodeFs.writeFileSync(localPath, Buffer.from(meta.data, 'base64'));
+          savedLocalPath = localPath;
           record = { ...record, content: JSON.stringify({ name: meta.name, size: meta.size, mimeType: meta.mimeType }) };
           db.saveMessage(record);
           db.saveFile({
@@ -125,6 +131,7 @@ function handleIncoming(msg) {
           nodeFs.mkdirSync(fileDir, { recursive: true });
           const localPath = nodePath.join(fileDir, meta.name);
           nodeFs.writeFileSync(localPath, Buffer.from(meta.data, 'base64'));
+          savedLocalPath = localPath;
           record = { ...record, content: JSON.stringify({ name: meta.name, size: meta.size, mimeType: meta.mimeType }) };
           db.saveMessage(record);
           db.saveFile({
@@ -152,6 +159,7 @@ function handleIncoming(msg) {
       color: sender.color || '#4A9E8F',
       channel_name: channel?.name || null,
       reactions: [],
+      localPath: savedLocalPath,
     });
     maybeNotify(record, sender);
   } else if (type === 'EDIT') {
@@ -249,12 +257,16 @@ function maybeNotify(record, sender) {
   _unreadTotal += 1;
 
   const entry = _pendingNotifs.get(chatId);
+  // NOT unref'd on purpose: an unref'd timer can't keep the main-process event
+  // loop awake, so with the window hidden and the app otherwise idle the toast
+  // could be held back until some unrelated event woke the loop — exactly the
+  // "only fails when the chat isn't open" symptom. stop() clears every pending
+  // timer via clearPendingNotifications(), so quitting is delayed 1.5 s at most.
   entry.timer = setTimeout(() => {
     _pendingNotifs.delete(chatId);
     fireNotification({ chatId, chatType, senderName: entry.senderName, count: entry.count, lastBody: entry.lastBody });
     updateTrayBadge();
   }, 1500);
-  entry.timer.unref?.();
 
   updateTrayBadge();
 }

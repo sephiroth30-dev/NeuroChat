@@ -4,7 +4,7 @@ const path = require('path');
 const { app } = require('electron');
 const Database = require('better-sqlite3');
 
-const _DB_VERSION = 6;
+const _DB_VERSION = 7;
 let db = null;
 
 function getDbPath() {
@@ -296,6 +296,21 @@ function runMigrations() {
     db.exec('UPDATE messages SET received_at = timestamp WHERE received_at IS NULL');
     db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(6);
   }
+
+  if (current < 7) {
+    // getMessages() orders by received_at DESC, rowid DESC, but the original
+    // indexes were on (…, timestamp) — so SQLite had to sort every row of the
+    // conversation in a temp B-tree, materializing full rows (including any
+    // inline base64) on every single chat load.
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_messages_channel_recv
+        ON messages(channel_id, received_at DESC, rowid DESC);
+      CREATE INDEX IF NOT EXISTS idx_messages_private_recv
+        ON messages(private_chat_uuid, received_at DESC, rowid DESC);
+    `);
+    try { db.exec('ANALYZE'); } catch {}
+    db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(7);
+  }
 }
 
 // ── Profile ──────────────────────────────────────────────────────────────────
@@ -446,6 +461,10 @@ function getMessages({ channelId, privateChatUuid, limit = 50, before = null }) 
   return [];
 }
 
+function getMessageById(id) {
+  return db.prepare('SELECT * FROM messages WHERE id = ?').get(id) || null;
+}
+
 function saveMessage(msg) {
   db.prepare(
     `
@@ -482,10 +501,51 @@ function markRead(id, uuid) {
   }
 }
 
+// Mark many messages read in a single transaction. The renderer used to send
+// one IPC per unread message (up to 50 round trips per chat open), each doing
+// its own read-modify-write of the read_by JSON array.
+function markReadBatch(ids, uuid) {
+  if (!ids || !ids.length || !uuid) return;
+  const select = db.prepare('SELECT read_by FROM messages WHERE id = ?');
+  const update = db.prepare('UPDATE messages SET read_by = ? WHERE id = ?');
+  const tx = db.transaction(() => {
+    for (const id of ids) {
+      const row = select.get(id);
+      if (!row) continue;
+      let readBy;
+      try {
+        readBy = JSON.parse(row.read_by || '[]');
+      } catch {
+        readBy = [];
+      }
+      if (readBy.includes(uuid)) continue;
+      readBy.push(uuid);
+      update.run(JSON.stringify(readBy), id);
+    }
+  });
+  tx();
+}
+
 // ── Reactions ─────────────────────────────────────────────────────────────────
 
 function getReactions(messageId) {
   return db.prepare('SELECT * FROM reactions WHERE message_id = ?').all(messageId);
+}
+
+// Batch variant: one query for a whole page of messages instead of one per row
+// (a 50-message chat load used to fire 50 separate queries).
+// Returns { [messageId]: [reaction, …] }.
+function getReactionsForMessages(ids) {
+  if (!ids || !ids.length) return {};
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db
+    .prepare(`SELECT * FROM reactions WHERE message_id IN (${placeholders})`)
+    .all(...ids);
+  const byMsg = {};
+  rows.forEach(r => {
+    (byMsg[r.message_id] ||= []).push(r);
+  });
+  return byMsg;
 }
 
 function upsertReaction(messageId, userUuid, emoji) {
@@ -527,6 +587,21 @@ function updateFileSha256(id, sha256) {
 
 function getFileByMsgId(messageId) {
   return db.prepare('SELECT * FROM files WHERE message_id = ?').get(messageId);
+}
+
+// Batch variant — see getReactionsForMessages. Returns { [messageId]: file }.
+// Keeps the first row per message, matching getFileByMsgId's .get() semantics.
+function getFilesForMessages(ids) {
+  if (!ids || !ids.length) return {};
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db
+    .prepare(`SELECT * FROM files WHERE message_id IN (${placeholders})`)
+    .all(...ids);
+  const byMsg = {};
+  rows.forEach(r => {
+    if (!byMsg[r.message_id]) byMsg[r.message_id] = r;
+  });
+  return byMsg;
 }
 
 // ── Pinned messages ───────────────────────────────────────────────────────────
@@ -730,12 +805,16 @@ module.exports = {
   upsertChannel,
   deleteChannel,
   getMessages,
+  getMessageById,
   saveMessage,
   editMessage,
   deleteMessage,
   markDelivered,
   markRead,
+  markReadBatch,
   getReactions,
+  getReactionsForMessages,
+  getFilesForMessages,
   upsertReaction,
   removeReaction,
   saveFile,

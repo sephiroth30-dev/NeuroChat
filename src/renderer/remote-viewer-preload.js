@@ -9,8 +9,13 @@ contextBridge.exposeInMainWorld('remoteViewer', {
   // Get ICE server list (includes TURN if configured in settings)
   getIceServers: () => ipcRenderer.invoke('remote:getIceServers'),
 
-  // End this session
-  endSession: sessionId => ipcRenderer.invoke('remote:end', { sessionId }),
+  // End this session. keepWindow: true tears down the session but leaves this
+  // window open so an error message stays readable.
+  endSession: (sessionId, keepWindow = false) =>
+    ipcRenderer.invoke('remote:end', { sessionId, keepWindow }),
+
+  // Close this window (used after the session is already gone)
+  closeWindow: () => ipcRenderer.send('remote:closeWindow'),
 
   // Minimize (hide) the viewer window without ending the session
   minimizeWindow: () => ipcRenderer.send('remote:minimize'),

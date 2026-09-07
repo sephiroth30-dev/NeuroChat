@@ -24,6 +24,7 @@ let connectTimer   = null;
 let videoTimer     = null;   // secondary timer: video must arrive after ICE connects
 let inputEnabled   = false;
 let _videoActivated = false; // guard: _activateVideo runs at most once
+let _sessionEnded  = false;  // session torn down; window kept open to show an error
 
 // ICE candidate buffer (candidates arriving before setRemoteDescription)
 let _pendingIce    = [];
@@ -165,11 +166,15 @@ function _updateOverlayMsg(text) {
   if (msgEl && !msgEl.style.color) msgEl.textContent = text;
 }
 
-// Terminate the session and show an error to the user
+// Terminate the session and show an error to the user.
+// keepWindow:true is essential — ending the session normally destroys THIS
+// window, which used to wipe the error message the instant it was rendered
+// (the user only ever saw "Conectando…" and then the window vanishing).
 function _endWithError(html) {
   cleanup();
+  _sessionEnded = true;
   showConnectError(html);
-  remoteViewer.endSession(SESSION_ID).catch(() => {});
+  remoteViewer.endSession(SESSION_ID, true).catch(() => {});
 }
 
 function startConnectTimeout() {
@@ -195,8 +200,10 @@ document.getElementById('cancel-connect-btn').addEventListener('click', async ()
   connectTimer = null;
   videoTimer   = null;
   cleanup();
-  await remoteViewer.endSession(SESSION_ID).catch(() => {});
-  window.close();
+  // Skip endSession if the session is already gone (error path) — it would
+  // early-return in the main process and never close this window.
+  if (!_sessionEnded) await remoteViewer.endSession(SESSION_ID).catch(() => {});
+  remoteViewer.closeWindow();
 });
 
 // ── Toolbar auto-hide ─────────────────────────────────────────────────────────
@@ -213,6 +220,7 @@ document.addEventListener('keydown',   showToolbar);
 
 remoteViewer.on('remote:signaling', async msg => {
   if (msg.sessionId !== SESSION_ID) return;
+  if (_sessionEnded) return; // window kept open only to display an error
   try {
     if (msg.type === 'REMOTE_SDP' && msg.sdpType === 'offer') {
       // ensureInit() creates the PC exactly once (mutex); concurrent calls
@@ -252,16 +260,31 @@ remoteViewer.on('remote:signaling', async msg => {
   }
 });
 
-remoteViewer.on('remote:session-ended', () => {
+// Reasons the host can report when it aborts before any video is produced
+const HOST_END_REASONS = {
+  'sin-permiso-captura':
+    'El equipo remoto no tiene permiso para <strong>compartir su pantalla</strong>.<br>' +
+    '<small style="opacity:.7">Windows: Configuración → Privacidad → Capturas de pantalla. ' +
+    'macOS: Sistema → Privacidad → Grabación de pantalla → activar NeuroChat.</small>',
+  'captura-fallida':
+    'El equipo remoto no pudo capturar su pantalla.<br>' +
+    '<small style="opacity:.7">Puede ocurrir si la sesión está bloqueada o si otro programa ' +
+    'tiene el control exclusivo de la pantalla.</small>',
+};
+
+remoteViewer.on('remote:session-ended', payload => {
   cleanup();
+  _sessionEnded = true;
   if (inputEnabled) {
-    window.close();
-  } else {
-    showConnectError(
-      'El equipo remoto terminó la sesión antes de que el vídeo llegara.<br>' +
-      'Si es un Mac, verifica que NeuroChat tenga permiso de <strong>Grabación de pantalla</strong>.'
-    );
+    remoteViewer.closeWindow();
+    return;
   }
+  const reason = payload && payload.reason;
+  showConnectError(
+    HOST_END_REASONS[reason] ||
+      'El equipo remoto terminó la sesión antes de que el vídeo llegara.<br>' +
+        'Si es un Mac, verifica que NeuroChat tenga permiso de <strong>Grabación de pantalla</strong>.'
+  );
 });
 
 // ── Input capture & forwarding ────────────────────────────────────────────────

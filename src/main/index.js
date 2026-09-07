@@ -8,6 +8,13 @@ if (!gotLock) {
   app.quit();
 }
 
+// Windows toast notifications are silently dropped unless the process AUMID
+// matches the Start Menu shortcut's AUMID. NSIS stamps the shortcut with the
+// appId from electron-builder.yml, so the running process must adopt the same
+// string — without this, no notification ever appears on an installed build.
+// Must run before any window is created.
+app.setAppUserModelId('com.neurofit.neurochat');
+
 // WebRTC: disable mDNS candidate obfuscation so LAN peers can resolve ICE candidates.
 // Chromium hides local IPs with random .local hostnames by default; Windows/Linux
 // cannot resolve macOS mDNS names, breaking WebRTC on heterogeneous LANs.

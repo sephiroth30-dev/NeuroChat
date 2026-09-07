@@ -96,27 +96,138 @@ function register() {
 
   // ── Messages ───────────────────────────────────────────────────────────────
 
+  // Strip any inline base64 payload out of a message's content before it
+  // crosses IPC. Older rows (pre-2.4.0) embed the whole file in `content`,
+  // so a 20-image chat used to structured-clone tens of MB into the renderer
+  // on EVERY reload. The renderer fetches the bytes on demand instead, via
+  // 'message:getInlineData'.
+  function stripInlineData(m) {
+    if (m.type !== 'file' && m.type !== 'audio') return m;
+    if (!m.content || m.content.indexOf('"data"') === -1) return m;
+    try {
+      const meta = JSON.parse(m.content);
+      if (!meta || !meta.data) return m;
+      delete meta.data;
+      return { ...m, content: JSON.stringify(meta), hasInlineData: true };
+    } catch {
+      return m;
+    }
+  }
+
   ipcMain.handle('messages:get', (_e, opts) => {
     const msgs = db.getMessages(opts);
     const allUsers = db.getAllUsers();
     const myProfile = db.getProfile();
     const userMap = new Map(allUsers.map(u => [u.uuid, u]));
     if (myProfile) userMap.set(myProfile.uuid, myProfile);
+
+    // One query each for the whole page instead of two per message
+    const ids = msgs.map(m => m.id);
+    const reactionsByMsg = db.getReactionsForMessages(ids);
+    const filesByMsg = db.getFilesForMessages(ids);
+
     return msgs.map(m => {
       const sender = userMap.get(m.from_uuid) || {};
+      const base = stripInlineData(m);
       const result = {
-        ...m,
+        ...base,
         sender_name: sender.name || 'Usuario',
         color: sender.color || '#4A9E8F',
         read_by: JSON.parse(m.read_by || '[]'),
-        reactions: db.getReactions(m.id),
+        reactions: reactionsByMsg[m.id] || [],
       };
       if (m.type === 'file' || m.type === 'audio') {
-        const fileRec = db.getFileByMsgId(m.id);
+        const fileRec = filesByMsg[m.id];
         if (fileRec) result.localPath = fileRec.local_path;
       }
       return result;
     });
+  });
+
+  // On-demand fetch of an inline base64 payload for a legacy message whose
+  // bytes were never written to disk. Writes them out on first access so the
+  // next load uses localPath (lazy migration — no bulk DB rewrite needed).
+  ipcMain.handle('message:getInlineData', (_e, messageId) => {
+    const row = db.getMessageById(messageId);
+    if (!row || !row.content) return null;
+    let meta;
+    try {
+      meta = JSON.parse(row.content);
+    } catch {
+      return null;
+    }
+    if (!meta?.data || !meta.name) return null;
+
+    // Persist to disk once so this path isn't needed again
+    try {
+      const nodeFs = require('fs');
+      const nodePath = require('path');
+      const nodeCrypto = require('crypto');
+      const isImg = meta.mimeType?.startsWith('image/');
+      const subDir = row.type === 'audio' ? 'audio' : isImg ? 'images' : 'files';
+      const fileDir = nodePath.join(app.getPath('userData'), subDir);
+      nodeFs.mkdirSync(fileDir, { recursive: true });
+      const localPath = nodePath.join(fileDir, meta.name);
+      if (!nodeFs.existsSync(localPath)) {
+        nodeFs.writeFileSync(localPath, Buffer.from(meta.data, 'base64'));
+      }
+      if (!db.getFileByMsgId(messageId)) {
+        db.saveFile({
+          id: nodeCrypto.randomUUID(), message_id: messageId, original_name: meta.name,
+          local_path: localPath, size: meta.size || 0, mime_type: meta.mimeType || '',
+          sha256: '', timestamp: Date.now(),
+        });
+      }
+      return { mimeType: meta.mimeType || '', data: meta.data, localPath };
+    } catch (err) {
+      console.warn('[message:getInlineData] no se pudo materializar:', err.message);
+      return { mimeType: meta.mimeType || '', data: meta.data, localPath: null };
+    }
+  });
+
+  // Batched read receipts: one IPC round trip and one DB transaction instead of
+  // one per message. The WIRE protocol is unchanged — a READ_RECEIPT is still
+  // sent per message id, so peers on older versions still light up their ticks.
+  ipcMain.handle('messages:markReadBatch', (_e, { messages }) => {
+    const profile = db.getProfile();
+    if (!profile || !Array.isArray(messages) || !messages.length) return { ok: false };
+
+    db.markReadBatch(messages.map(m => m.id), profile.uuid);
+
+    const onlineUsers = store.getOnlineUsers();
+    messages.forEach(({ id, fromUuid }) => {
+      const peer = onlineUsers.find(u => u.uuid === fromUuid);
+      if (!peer) return;
+      wsClient.sendTo(peer, {
+        type: 'READ_RECEIPT',
+        messageId: id,
+        readerUuid: profile.uuid,
+      });
+    });
+    return { ok: true };
+  });
+
+  // Single enriched message — lets the renderer patch one row after an edit,
+  // delete or reaction instead of re-reading the whole conversation.
+  ipcMain.handle('messages:getOne', (_e, messageId) => {
+    const row = db.getMessageById(messageId);
+    if (!row) return null;
+    const sender =
+      db.getAllUsers().find(u => u.uuid === row.from_uuid) ||
+      (db.getProfile()?.uuid === row.from_uuid ? db.getProfile() : null) ||
+      {};
+    const result = {
+      ...stripInlineData(row),
+      sender_name: sender.name || 'Usuario',
+      color: sender.color || '#4A9E8F',
+      read_by: JSON.parse(row.read_by || '[]'),
+      reactions: db.getReactions(row.id),
+    };
+    if (row.type === 'file' || row.type === 'audio') {
+      const fileRec = db.getFileByMsgId(row.id);
+      if (fileRec) result.localPath = fileRec.local_path;
+    }
+    return result;
   });
 
   ipcMain.handle('messages:send', (_e, msg) => {
@@ -361,12 +472,17 @@ function register() {
     const base64 = buf.toString('base64');
     const messageId = crypto.randomUUID();
 
+    const meta = { name, size: buf.length, mimeType };
+
+    // The base64 goes on the wire, but NOT into our own DB: storing it in
+    // messages.content made every later chat load ship megabytes over IPC.
+    // We keep only the metadata locally and point at the file on disk.
     const message = {
       id: messageId,
       channel_id: chatType === 'channel' ? chatId : null,
       private_chat_uuid: chatType === 'dm' ? buildChatId(profile.uuid, chatId) : null,
       from_uuid: profile.uuid,
-      content: JSON.stringify({ name, size: buf.length, mimeType, data: base64 }),
+      content: JSON.stringify(meta),
       type: 'file',
       reply_to: null,
       timestamp: Date.now(),
@@ -376,12 +492,30 @@ function register() {
       read_by: [],
     };
     db.saveMessage(message);
+
+    // Copy into userData so the message keeps rendering even if the user
+    // moves or deletes the original file they picked.
+    let localPath = filePath;
+    try {
+      const isImg = mimeType?.startsWith('image/');
+      const subDir = isImg ? 'images' : 'files';
+      const fileDir = path.join(app.getPath('userData'), subDir);
+      fs.mkdirSync(fileDir, { recursive: true });
+      const dest = path.join(fileDir, `${messageId}-${name}`);
+      fs.writeFileSync(dest, buf);
+      localPath = dest;
+    } catch (err) {
+      console.warn('[image:sendInline] no se pudo copiar a userData:', err.message);
+    }
+
     db.saveFile({
       id: crypto.randomUUID(), message_id: messageId, original_name: name,
-      local_path: filePath, size: buf.length, mime_type: mimeType,
+      local_path: localPath, size: buf.length, mime_type: mimeType,
       sha256: '', timestamp: Date.now(),
     });
-    wsServer.broadcast(message);
+
+    // Broadcast carries the payload; the persisted record above does not.
+    wsServer.broadcast({ ...message, content: JSON.stringify({ ...meta, data: base64 }) });
     return { ok: true };
   });
 

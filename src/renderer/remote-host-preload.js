@@ -15,8 +15,10 @@ contextBridge.exposeInMainWorld('remoteHost', {
   // Get ICE server list (includes TURN if configured in settings)
   getIceServers: () => ipcRenderer.invoke('remote:getIceServers'),
 
-  // End this session
-  endSession: sessionId => ipcRenderer.invoke('remote:end', { sessionId }),
+  // End this session. reason is forwarded to the viewer so it can explain why
+  // the session aborted instead of showing a generic timeout.
+  endSession: (sessionId, reason = null) =>
+    ipcRenderer.invoke('remote:end', { sessionId, reason }),
 
   // Minimize (hide) the host notification window without ending the session
   minimizeWindow: () => ipcRenderer.send('remote:minimize'),

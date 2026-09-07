@@ -34,12 +34,27 @@ rem --- 3. Borrar restos ---
 if exist "%ProgramFiles%\NeuroChat" rd /s /q "%ProgramFiles%\NeuroChat" >nul 2>&1
 if defined ProgramFiles(x86) if exist "%ProgramFiles(x86)%\NeuroChat" rd /s /q "%ProgramFiles(x86)%\NeuroChat" >nul 2>&1
 
-rem --- 4. Reglas de firewall a nivel maquina ---
+rem --- 4. Reglas de firewall a nivel maquina (puertos fijos) ---
 netsh advfirewall firewall delete rule name="NeuroChat UDP"  >nul 2>&1
 netsh advfirewall firewall delete rule name="NeuroChat WS"   >nul 2>&1
 netsh advfirewall firewall delete rule name="NeuroChat File" >nul 2>&1
 netsh advfirewall firewall add rule name="NeuroChat UDP"  protocol=UDP localport=45678 action=allow dir=in profile=any >nul 2>&1
 netsh advfirewall firewall add rule name="NeuroChat WS"   protocol=TCP localport=45679 action=allow dir=in profile=any >nul 2>&1
 netsh advfirewall firewall add rule name="NeuroChat File" protocol=TCP localport=45680 action=allow dir=in profile=any >nul 2>&1
+
+rem --- 5. Regla de aplicacion: IMPRESCINDIBLE para el soporte remoto ---
+rem     WebRTC negocia por puertos UDP efimeros aleatorios, asi que las reglas
+rem     de puerto fijo de arriba NO le sirven de nada. Sin esta regla la sesion
+rem     remota se queda en "Conectando..." y nunca conecta.
+rem     La instalacion es por-usuario, asi que hay que registrar la ruta del
+rem     ejecutable de cada perfil. Nota: la regla de un usuario nuevo aparece
+rem     hasta el siguiente arranque despues de su primera instalacion.
+netsh advfirewall firewall delete rule name="NeuroChat App" >nul 2>&1
+for /d %%U in ("%SystemDrive%\Users\*") do (
+  if exist "%%U\AppData\Local\Programs\NeuroChat\NeuroChat.exe" (
+    netsh advfirewall firewall add rule name="NeuroChat App" dir=in action=allow profile=any ^
+      program="%%U\AppData\Local\Programs\NeuroChat\NeuroChat.exe" protocol=any >nul 2>&1
+  )
+)
 
 exit /b 0

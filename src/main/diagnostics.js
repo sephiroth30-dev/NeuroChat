@@ -62,15 +62,27 @@ async function runDiagnostics(onlineUserCount = 0) {
   };
 }
 
-// Check if Windows Firewall rules for NeuroChat are already in place
+// Check if Windows Firewall rules for NeuroChat are already in place.
+// BOTH matter: the fixed-port rules cover chat/discovery/file transfer, while
+// the app-level rule is what lets WebRTC (remote support) through — it binds
+// random ephemeral UDP ports, so the fixed-port rules do nothing for it.
+// Checking only "NeuroChat WS" made this return true on GPO-managed machines
+// (the GPO script creates it) so the app-level rule was never added.
 async function checkFirewallRules() {
   if (process.platform !== 'win32') return true;
-  try {
-    const { stdout } = await execAsync('netsh advfirewall firewall show rule name="NeuroChat WS"', { timeout: 5000 });
-    return !stdout.includes('No rules match');
-  } catch {
-    return false;
-  }
+  const hasRule = async name => {
+    try {
+      const { stdout } = await execAsync(
+        `netsh advfirewall firewall show rule name="${name}"`,
+        { timeout: 5000 }
+      );
+      return !stdout.includes('No rules match');
+    } catch {
+      return false;
+    }
+  };
+  const [ws, appRule] = await Promise.all([hasRule('NeuroChat WS'), hasRule('NeuroChat App')]);
+  return ws && appRule;
 }
 
 // Add Windows Firewall rules with UAC elevation via PowerShell.
