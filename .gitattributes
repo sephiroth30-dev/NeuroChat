@@ -1,0 +1,9 @@
+# Windows batch scripts must keep CRLF endings: these are deployed through
+# SYSVOL and run by cmd.exe on Windows Server 2008 R2 era hosts, where LF-only
+# files can mis-parse multi-line constructs (notably `^` continuations inside
+# a parenthesised for-block).
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# NSIS installer scripts likewise
+*.nsh text eol=crlf

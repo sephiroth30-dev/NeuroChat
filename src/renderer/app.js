@@ -555,6 +555,9 @@ function sendPendingReadReceipts(messages) {
 function renderMessages(messages) {
   const container = $('messages-inner');
   releaseAudioElements();
+  // Drop observations on the rows we're about to discard, otherwise detached
+  // <img> nodes accumulate in the observer for the life of the session.
+  _inlineObserver?.disconnect();
   container.innerHTML = '';
 
   let lastDate = null;
@@ -585,6 +588,16 @@ function isNearBottom() {
   return list.scrollHeight - list.scrollTop - list.clientHeight < 120;
 }
 
+// Dismiss the "nuevos mensajes" pill once the user scrolls down themselves,
+// otherwise it stays pinned with a stale count until the next chat switch.
+document.addEventListener('DOMContentLoaded', () => {
+  $('message-list')?.addEventListener(
+    'scroll',
+    () => { if (isNearBottom()) hideNewMsgsPill(); },
+    { passive: true }
+  );
+});
+
 // Append exactly one row, reusing the same helpers renderMessages uses.
 // Falls back to a full rebuild when a message arrives out of order, so date
 // separators and sender grouping can't drift.
@@ -592,15 +605,23 @@ function appendMessage(msg) {
   const container = $('messages-inner');
   if (!container) return;
 
+  // Order by received_at, matching how getMessages() sorts. Comparing sender
+  // clocks (timestamp) instead would send every message from a peer whose
+  // clock runs slow down the full-reload path, and give one whose clock runs
+  // fast a spurious date separator.
   const last = container.lastElementChild;
-  const lastTs = last?.dataset?.ts ? Number(last.dataset.ts) : 0;
-  if (lastTs && msg.timestamp < lastTs) {
+  const lastRecv = last?.dataset?.recv ? Number(last.dataset.recv) : 0;
+  const msgRecv = msg.received_at || msg.timestamp || 0;
+  if (lastRecv && msgRecv < lastRecv) {
     loadMessages();
     return;
   }
 
   const stickToBottom = isNearBottom();
 
+  // Date separators still follow the displayed timestamp, since that's the
+  // date shown on the bubbles themselves.
+  const lastTs = last?.dataset?.ts ? Number(last.dataset.ts) : 0;
   const msgDate = new Date(msg.timestamp).toDateString();
   const lastDate = lastTs ? new Date(lastTs).toDateString() : null;
   let lastSender = last?.dataset?.from || null;
@@ -627,6 +648,18 @@ function patchMessage(msg) {
   const container = $('messages-inner');
   const row = container?.querySelector(`.msg-row[data-id="${CSS.escape(String(msg.id))}"]`);
   if (!row) return false;
+
+  // Don't rip a voice note out from under itself: the cached <audio> would
+  // keep playing while its button — now detached — shows "play".
+  const cachedAudio = _audioElements.get(msg.id);
+  if (cachedAudio && !cachedAudio.paused) return false;
+  releaseAudioElement(msg.id);
+
+  // Stop observing any placeholder image inside the row we're discarding
+  row.querySelectorAll('img[data-needs-inline]').forEach(img => {
+    _inlineObserver?.unobserve(img);
+  });
+
   const isOutgoing = msg.from_uuid === myProfile?.uuid;
   const grouped = row.classList.contains('grouped');
   row.replaceWith(makeMsgRow(msg, isOutgoing, grouped));
@@ -673,10 +706,20 @@ function hideNewMsgsPill() {
 function scrollMessagesToBottom() {
   const list = $('message-list');
   if (!list) return;
-  // Single layout pass — the old version forced layout three times
-  // (immediately, on rAF, and again 80 ms later) on every render.
-  requestAnimationFrame(() => {
-    list.scrollTop = list.scrollHeight;
+
+  const pin = () => { list.scrollTop = list.scrollHeight; };
+
+  // One layout pass instead of the old three (immediate + rAF + 80 ms timer).
+  requestAnimationFrame(pin);
+
+  // Images are lazy and carry no intrinsic size, so at rAF time the last row
+  // is still ~0 px tall; without re-pinning once each one decodes, the new
+  // bubble ends up below the fold and the view looks stuck.
+  const pending = $('messages-inner')?.lastElementChild?.querySelectorAll?.('img') || [];
+  pending.forEach(img => {
+    if (img.complete) return;
+    img.addEventListener('load', pin, { once: true });
+    img.addEventListener('error', pin, { once: true });
   });
 }
 
@@ -720,9 +763,10 @@ function makeMsgRow(msg, isOutgoing, grouped) {
   const row = document.createElement('div');
   row.className = `msg-row${isOutgoing ? ' outgoing' : ''}${grouped ? ' grouped' : ''}`;
   row.dataset.id = msg.id;
-  // Read back by appendMessage() to decide date separators / sender grouping
-  // without re-reading the whole list.
+  // Read back by appendMessage() to decide ordering, date separators and
+  // sender grouping without re-reading the whole list.
   row.dataset.ts = String(msg.timestamp || 0);
+  row.dataset.recv = String(msg.received_at || msg.timestamp || 0);
   row.dataset.from = msg.from_uuid || '';
 
   if (msg.deleted) {
@@ -807,12 +851,19 @@ function makeFileRow(row, msg, isOutgoing) {
        </button>`
     : '';
 
+  // 1x1 transparent GIF. An empty src="" resolves to the document URL, so the
+  // browser fetches index.html, shows a broken-image icon, and the lightbox
+  // would then open the app's own HTML.
+  const BLANK_IMG =
+    'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
   let inner;
   if (canShowInline) {
+    const pendingInline = needsInline && !safeLocal;
     inner = `
       <div class="img-bubble">
-        <img src="${safeLocal}" alt="${escHtml(name)}" loading="lazy"
-             ${needsInline && !safeLocal ? `data-needs-inline="${escHtml(String(msg.id))}"` : ''} />
+        <img src="${pendingInline ? BLANK_IMG : safeLocal}" alt="${escHtml(name)}" loading="lazy"
+             ${pendingInline ? `data-needs-inline="${escHtml(String(msg.id))}"` : ''} />
         ${downloadBtn}
       </div>`;
   } else {
@@ -853,8 +904,12 @@ function makeFileRow(row, msg, isOutgoing) {
     // only when the image actually scrolls into view.
     if (img?.dataset.needsInline) observeInlineImage(img);
     // Open in built-in lightbox — avoids external app issues on Windows
-    img?.addEventListener('click', () => {
-      openLightbox(img.src || safeLocal, name, localPath || img.dataset.localPath || null);
+    img?.addEventListener('click', async () => {
+      // Still showing the placeholder (never scrolled into view, or the fetch
+      // failed): pull the bytes now rather than opening a blank lightbox.
+      if (img.dataset.needsInline) await loadInlineImage(img);
+      if (!img.src || img.src.startsWith('data:image/gif;base64,R0lGOD')) return;
+      openLightbox(img.src, name, localPath || img.dataset.localPath || null);
     });
   } else if (localPath) {
     row.querySelector('.file-bubble')?.addEventListener('click', async e => {
@@ -884,6 +939,12 @@ function makeAudioRow(row, msg, isOutgoing) {
   let meta = {};
   try { meta = JSON.parse(msg.content || '{}'); } catch {}
   const audioSrc = audioSrcFromMessage(msg, meta);
+  // Legacy voice note: the base64 is still in the DB but no longer travels
+  // with messages:get, and there's no file on disk. Enable the button anyway
+  // and fetch the payload on first play — otherwise it renders as a dead
+  // control, which is what it did before this branch existed.
+  const inlineAudioId = !audioSrc && msg.hasInlineData ? String(msg.id) : null;
+  const playable = !!audioSrc || !!inlineAudioId;
   const statusHtml = isOutgoing ? renderDeliveryStatus(msg) : '';
   const bars = Array.from({ length: 30 }, (_, i) => {
     const h = Math.max(4, 4 + Math.sin(i * 0.7 + 1) * 8 + Math.sin(i * 1.3) * 5 + Math.abs(Math.sin(i * 0.4)) * 5);
@@ -894,8 +955,8 @@ function makeAudioRow(row, msg, isOutgoing) {
   row.innerHTML = `
     <div class="msg-bubble">
       ${currentChat?.type === 'channel' && !isOutgoing ? `<span class="msg-sender" style="color:${msg.color || '#4A9E8F'}">${escHtml(msg.sender_name || '')}</span>` : ''}
-      <div class="audio-bubble${audioSrc ? '' : ' pending'}">
-        <button class="audio-play-btn" id="play-${msg.id}" ${audioSrc ? '' : 'disabled'}>
+      <div class="audio-bubble${playable ? '' : ' pending'}">
+        <button class="audio-play-btn" id="play-${msg.id}" ${playable ? '' : 'disabled'}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </button>
         <div class="audio-wave"><svg viewBox="0 0 120 32" preserveAspectRatio="none">${bars}</svg></div>
@@ -913,7 +974,7 @@ function makeAudioRow(row, msg, isOutgoing) {
   });
   _addMsgActionBtn(row, msg, isOutgoing);
 
-  if (audioSrc) {
+  if (playable) {
     const playBtn = row.querySelector(`#play-${msg.id}`);
     const durEl = row.querySelector(`#dur-${msg.id}`);
     const PLAY_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
@@ -929,8 +990,22 @@ function makeAudioRow(row, msg, isOutgoing) {
     }
 
     let playing = false;
+    let resolvedSrc = audioSrc;
     playBtn.onclick = async () => {
-      const audio = getAudioElement(msg.id, audioSrc, { durEl, playBtn, fmt });
+      // Legacy row: pull the base64 from the DB the first time it's played
+      // (the main process also writes it to disk, so next time it's a file).
+      if (!resolvedSrc && inlineAudioId) {
+        const payload = await nc.getInlineData(inlineAudioId).catch(() => null);
+        if (payload?.localPath) resolvedSrc = fileUrlFromPath(payload.localPath);
+        else if (payload?.data) resolvedSrc = `data:${payload.mimeType || 'audio/webm'};base64,${payload.data}`;
+        if (!resolvedSrc) {
+          playBtn.disabled = true;
+          durEl.textContent = '--:--';
+          showToast('No se pudo recuperar esta nota de voz', 'error');
+          return;
+        }
+      }
+      const audio = getAudioElement(msg.id, resolvedSrc, { durEl, playBtn, fmt });
       if (!audio) return;
       if (playing) {
         audio.pause();
@@ -977,13 +1052,18 @@ function getAudioElement(msgId, src, { durEl, playBtn, fmt }) {
   return audio;
 }
 
+function releaseAudioElement(msgId) {
+  const audio = _audioElements.get(msgId);
+  if (!audio) return;
+  try {
+    audio.pause();
+    audio.src = '';
+  } catch {}
+  _audioElements.delete(msgId);
+}
+
 function releaseAudioElements() {
-  _audioElements.forEach(audio => {
-    try {
-      audio.pause();
-      audio.src = '';
-    } catch {}
-  });
+  _audioElements.forEach((_audio, id) => releaseAudioElement(id));
   _audioElements.clear();
 }
 
@@ -2106,6 +2186,15 @@ function subscribeIPCEvents() {
       playNotifSound();
       nc.flashWindow();
 
+      // updateBadge() only patches counters now, so the DM list would no
+      // longer float whoever just wrote to the top — re-sort it here, on the
+      // background-message path only (not on every badge change).
+      if (!msg.channel_id) {
+        nc.getLastDMActivity()
+          .then(activity => renderDMList(cachedUsers, activity || {}))
+          .catch(() => {});
+      }
+
       if (msg.channel_id) {
         showChannelNotification(msg);
       } else {
@@ -2204,18 +2293,18 @@ function subscribeIPCEvents() {
     showRemoteRequestModal(msg);
   });
 
-  nc.on('remote:session-accepted', () => {
-    clearRemoteRequestPending();
+  nc.on('remote:session-accepted', data => {
+    clearRemoteRequestPending(data?.sessionId);
     showToast('Solicitud aceptada — abriendo sesión remota…', 'success');
   });
 
-  nc.on('remote:session-rejected', () => {
-    clearRemoteRequestPending();
+  nc.on('remote:session-rejected', data => {
+    clearRemoteRequestPending(data?.sessionId);
     showToast('El usuario rechazó la solicitud de soporte remoto.', 'error');
   });
 
-  nc.on('remote:session-ended', () => {
-    clearRemoteRequestPending();
+  nc.on('remote:session-ended', data => {
+    clearRemoteRequestPending(data?.sessionId);
     showToast('Sesión remota terminada.', 'info');
   });
 
@@ -2242,12 +2331,16 @@ function subscribeIPCEvents() {
 // Pending remote-support request: without this the requester got a single
 // toast and then silence forever if the peer never answered.
 let _remoteRequestTimer = null;
-let _remoteRequestPending = false;
+let _remoteRequestSessionId = null;
 
-function clearRemoteRequestPending() {
+// Scoped to one session id: this machine can also be the HOST of an unrelated
+// session, and any session ending would otherwise cancel the timer for a
+// request that is still genuinely waiting for an answer.
+function clearRemoteRequestPending(sessionId) {
+  if (sessionId && sessionId !== _remoteRequestSessionId) return;
   if (_remoteRequestTimer) clearTimeout(_remoteRequestTimer);
   _remoteRequestTimer = null;
-  _remoteRequestPending = false;
+  _remoteRequestSessionId = null;
 }
 
 async function startRemoteSession(peerUuid, peerName) {
@@ -2257,7 +2350,7 @@ async function startRemoteSession(peerUuid, peerName) {
     return;
   }
 
-  if (_remoteRequestPending) {
+  if (_remoteRequestSessionId) {
     showToast('Ya hay una solicitud de soporte remoto en curso.', 'info');
     return;
   }
@@ -2269,9 +2362,10 @@ async function startRemoteSession(peerUuid, peerName) {
   }
   showToast(`Solicitud enviada a ${peerName}. Esperando respuesta…`, 'info');
 
-  _remoteRequestPending = true;
+  _remoteRequestSessionId = result.sessionId || null;
   _remoteRequestTimer = setTimeout(() => {
-    clearRemoteRequestPending();
+    _remoteRequestTimer = null;
+    _remoteRequestSessionId = null;
     showToast(`${peerName} no respondió a la solicitud de soporte remoto.`, 'error');
   }, 45_000);
 }

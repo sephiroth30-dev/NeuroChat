@@ -191,12 +191,22 @@ function _registerIPC() {
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun.cloudflare.com:3478' },
     ];
-    if (settings.turnUrl && settings.turnUsername && settings.turnCredential) {
-      servers.push({
-        urls: settings.turnUrl,
-        username: settings.turnUsername,
-        credential: settings.turnCredential,
-      });
+    // A malformed TURN url makes the RTCPeerConnection constructor throw,
+    // which kills remote support outright — and the user would then be shown
+    // the generic "ICE falló / revisa el firewall" message and chase the
+    // wrong problem. Normalise and validate here instead; a bad value is
+    // dropped so the session still works over STUN.
+    const rawUrl = String(settings.turnUrl || '').trim();
+    const user = String(settings.turnUsername || '').trim();
+    const cred = String(settings.turnCredential || '').trim();
+    if (rawUrl && user && cred) {
+      // Accept a bare host:port and add the scheme the user forgot
+      const url = /^turns?:/i.test(rawUrl) ? rawUrl : `turn:${rawUrl}`;
+      if (/^turns?:[^\s:/?#]+(:\d{1,5})?(\?transport=(udp|tcp))?$/i.test(url)) {
+        servers.push({ urls: url, username: user, credential: cred });
+      } else {
+        console.warn('[remoteDesktop] turnUrl inválida, se ignora:', rawUrl);
+      }
     }
     return servers;
   });
@@ -333,7 +343,14 @@ function _endSession(sessionId, notify, opts = {}) {
   sessions.delete(sessionId);
 
   if (notify) {
-    const peer = store.getOnlineUsers().find(u => u.uuid === session.peerUuid);
+    // Fall back to the IP recorded on the session, exactly like
+    // remote:sendSignaling does. A session usually ends BECAUSE the network
+    // path degraded, which is also what drops the peer out of discovery — and
+    // if this message doesn't get out, the host never learns to stop and keeps
+    // capturing the screen indefinitely.
+    const peer =
+      store.getOnlineUsers().find(u => u.uuid === session.peerUuid) ||
+      (session.peerIp ? { uuid: session.peerUuid, ip: session.peerIp, wsPort: 45679 } : null);
     const profile = db?.getProfile();
     if (peer && profile) {
       wsClient.sendTo(peer, {
@@ -416,12 +433,20 @@ function handleSignaling(msg) {
     if (session?.hostWin && !session.hostWin.isDestroyed()) {
       session.hostWin.webContents.send('remote:session-ended', { sessionId, reason });
     }
+
+    // Hand the close decision to the viewer whenever we could actually deliver
+    // the event to it: its handler closes the window if the session was live,
+    // or shows why it ended if the video never arrived. Destroying the window
+    // here (as every no-reason path used to) is what made the session vanish
+    // mid-"Conectando…" with no explanation — the original bug, which only the
+    // two new reason-carrying paths had been fixed for.
+    let viewerWillDecide = false;
     if (session?.viewerWin && !session.viewerWin.isDestroyed()) {
       session.viewerWin.webContents.send('remote:session-ended', { sessionId, reason });
+      viewerWillDecide = true;
     }
-    // With a reason, keep the viewer open so it can render the explanation —
-    // its own 'remote:session-ended' handler decides whether to close.
-    _endSession(sessionId, false, { keepViewerWindow: !!reason });
+
+    _endSession(sessionId, false, { keepViewerWindow: viewerWillDecide });
     _notifyMainWindows('remote:session-ended', { sessionId, reason });
     return;
   }

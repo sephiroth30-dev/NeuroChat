@@ -70,19 +70,37 @@ async function runDiagnostics(onlineUserCount = 0) {
 // (the GPO script creates it) so the app-level rule was never added.
 async function checkFirewallRules() {
   if (process.platform !== 'win32') return true;
-  const hasRule = async name => {
+
+  const showRule = async (name, verbose = false) => {
     try {
       const { stdout } = await execAsync(
-        `netsh advfirewall firewall show rule name="${name}"`,
+        `netsh advfirewall firewall show rule name="${name}"${verbose ? ' verbose' : ''}`,
         { timeout: 5000 }
       );
-      return !stdout.includes('No rules match');
+      return stdout.includes('No rules match') ? null : stdout;
     } catch {
-      return false;
+      return null;
     }
   };
-  const [ws, appRule] = await Promise.all([hasRule('NeuroChat WS'), hasRule('NeuroChat App')]);
-  return ws && appRule;
+
+  const [wsOut, appOut] = await Promise.all([
+    showRule('NeuroChat WS'),
+    showRule('NeuroChat App', true),
+  ]);
+  if (!wsOut || !appOut) return false;
+
+  // The app rule must point at THIS user's executable. Several profiles can
+  // each have their own per-user install, and netsh keeps multiple rules under
+  // the same name — matching on the name alone would report "all good" while
+  // the only rule present authorises somebody else's exe, silently blocking
+  // WebRTC with no prompt and no diagnostic.
+  try {
+    const { app } = require('electron');
+    const exePath = app.getPath('exe').toLowerCase();
+    return appOut.toLowerCase().includes(exePath);
+  } catch {
+    return true; // can't resolve our own path — don't nag the user
+  }
 }
 
 // Add Windows Firewall rules with UAC elevation via PowerShell.
@@ -97,12 +115,17 @@ async function addFirewallRules() {
   const exePath = app.getPath('exe');
   const batchPath = path.join(os.tmpdir(), 'nc-fw.bat');
 
+  // Note: the port rules are deleted before being re-added (they're identical
+  // for every user), but the app rule is NOT — on a shared PC each profile has
+  // its own exe path, and deleting them all would silently break remote
+  // support for every other user of that machine. netsh allows several rules
+  // under the same name, so adding ours is enough.
   const lines = [
     '@echo off',
     `netsh advfirewall firewall delete rule name="NeuroChat UDP"  >nul 2>&1`,
     `netsh advfirewall firewall delete rule name="NeuroChat WS"   >nul 2>&1`,
     `netsh advfirewall firewall delete rule name="NeuroChat File" >nul 2>&1`,
-    `netsh advfirewall firewall delete rule name="NeuroChat App"  >nul 2>&1`,
+    `netsh advfirewall firewall delete rule name="NeuroChat App" program="${exePath}" >nul 2>&1`,
     `netsh advfirewall firewall add rule name="NeuroChat UDP"  protocol=UDP localport=${PORTS.udp} action=allow dir=in`,
     `netsh advfirewall firewall add rule name="NeuroChat WS"   protocol=TCP localport=${PORTS.ws}  action=allow dir=in`,
     `netsh advfirewall firewall add rule name="NeuroChat File" protocol=TCP localport=${PORTS.file} action=allow dir=in`,
@@ -119,10 +142,18 @@ async function addFirewallRules() {
 
   try {
     await execAsync(`powershell -WindowStyle Hidden -EncodedCommand ${encoded}`, { timeout: 30_000 });
-    return [{ ok: true }];
   } catch (e) {
     return [{ ok: false, error: e.message }];
   }
+
+  // Do NOT trust the exit code: declining the UAC prompt makes Start-Process
+  // raise a non-terminating error, so powershell.exe still exits 0. Reporting
+  // success there would stop the caller's retry counter from ever advancing
+  // and the user would be prompted for credentials on every single launch.
+  const applied = await checkFirewallRules();
+  return applied
+    ? [{ ok: true }]
+    : [{ ok: false, error: 'Las reglas no se crearon (elevación cancelada o denegada)' }];
 }
 
 module.exports = { runDiagnostics, checkFirewallRules, addFirewallRules, getLocalIPs };

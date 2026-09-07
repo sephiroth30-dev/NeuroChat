@@ -167,7 +167,9 @@ function register() {
       const subDir = row.type === 'audio' ? 'audio' : isImg ? 'images' : 'files';
       const fileDir = nodePath.join(app.getPath('userData'), subDir);
       nodeFs.mkdirSync(fileDir, { recursive: true });
-      const localPath = nodePath.join(fileDir, meta.name);
+      // meta.name is peer-supplied — sanitize, and namespace by message id so
+      // two messages sharing a filename can't end up pointing at one file.
+      const localPath = require('./fileNames').attachmentPath(fileDir, messageId, meta.name);
       if (!nodeFs.existsSync(localPath)) {
         nodeFs.writeFileSync(localPath, Buffer.from(meta.data, 'base64'));
       }
@@ -501,7 +503,8 @@ function register() {
       const subDir = isImg ? 'images' : 'files';
       const fileDir = path.join(app.getPath('userData'), subDir);
       fs.mkdirSync(fileDir, { recursive: true });
-      const dest = path.join(fileDir, `${messageId}-${name}`);
+      // Sanitize: a ':' or '?' in the picked filename would throw on Windows
+      const dest = require('./fileNames').attachmentPath(fileDir, messageId, name);
       fs.writeFileSync(dest, buf);
       localPath = dest;
     } catch (err) {

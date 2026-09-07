@@ -574,7 +574,9 @@ export async function render(container, profile, { onBack, onProfileSaved }) {
   turnCredEl.value = settings.turnCredential || '';
   turnUrlEl.onchange  = e => nc.saveSettings({ turnUrl: e.target.value.trim() });
   turnUserEl.onchange = e => nc.saveSettings({ turnUsername: e.target.value.trim() });
-  turnCredEl.onchange = e => nc.saveSettings({ turnCredential: e.target.value });
+  // Trimmed like the other two: a pasted trailing space would make TURN
+  // return 401 and surface as a confusing "ICE falló".
+  turnCredEl.onchange = e => nc.saveSettings({ turnCredential: e.target.value.trim() });
 
   const domainInfoEl = container.querySelector('#s-remote-domain-info');
   const remoteDomain = settings.remoteDomain || '';

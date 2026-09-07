@@ -99,7 +99,9 @@ function handleIncoming(msg) {
           const nodeCrypto = require('crypto');
           const audioDir = nodePath.join(electronApp.getPath('userData'), 'audio');
           nodeFs.mkdirSync(audioDir, { recursive: true });
-          const localPath = nodePath.join(audioDir, meta.name);
+          // meta.name comes from a peer — never join it raw (path traversal),
+          // and prefix with the message id so equal names can't collide.
+          const localPath = require('./fileNames').attachmentPath(audioDir, record.id, meta.name);
           nodeFs.writeFileSync(localPath, Buffer.from(meta.data, 'base64'));
           savedLocalPath = localPath;
           record = { ...record, content: JSON.stringify({ name: meta.name, size: meta.size, mimeType: meta.mimeType }) };
@@ -129,7 +131,9 @@ function handleIncoming(msg) {
           const subDir = isImg ? 'images' : 'files';
           const fileDir = nodePath.join(electronApp.getPath('userData'), subDir);
           nodeFs.mkdirSync(fileDir, { recursive: true });
-          const localPath = nodePath.join(fileDir, meta.name);
+          // meta.name comes from a peer — never join it raw (path traversal),
+          // and prefix with the message id so equal names can't collide.
+          const localPath = require('./fileNames').attachmentPath(fileDir, record.id, meta.name);
           nodeFs.writeFileSync(localPath, Buffer.from(meta.data, 'base64'));
           savedLocalPath = localPath;
           record = { ...record, content: JSON.stringify({ name: meta.name, size: meta.size, mimeType: meta.mimeType }) };

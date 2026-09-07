@@ -64,7 +64,7 @@ endlocal
 exit /b 0
 
 :log
-rem %~1 strips the caller's quotes, so keep it quoted here — otherwise a
+rem %~1 strips the caller's quotes, so keep it quoted here - otherwise a
 rem literal &, |, <, >, or ^ inside the text (e.g. from %USERNAME%) would be
 rem parsed as a batch operator instead of logged as plain text.
 >>"%LOG%" echo [%DATE% %TIME%] "%~1"
