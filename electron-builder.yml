@@ -22,11 +22,6 @@ files:
   - assets/tray-template.png
   - assets/tray-template@2x.png
 
-# Fonts go into the app's extra-resources folder so the renderer can load them
-extraResources:
-  - from: assets/fonts
-    to: fonts
-
 # Keep only Spanish/English Chromium locales — drops ~45 unused locale .pak
 # files from the bundle and shrinks both installer and installed footprint.
 electronLanguages:

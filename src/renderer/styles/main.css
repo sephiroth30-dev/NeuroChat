@@ -1,39 +1,9 @@
 /* ─── Fonts ─────────────────────────────────────────────────────────────── */
-@font-face {
-  font-family: 'DM Sans';
-  src: url('../../../assets/fonts/DMSans-Light.woff2') format('woff2');
-  font-weight: 300;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'DM Sans';
-  src: url('../../../assets/fonts/DMSans-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'DM Sans';
-  src: url('../../../assets/fonts/DMSans-Medium.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'DM Sans';
-  src: url('../../../assets/fonts/DMSans-SemiBold.woff2') format('woff2');
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'DM Mono';
-  src: url('../../../assets/fonts/DMMono-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
+/* No custom webfonts are bundled here. This file used to declare @font-face
+   rules for 'DM Sans'/'DM Mono', but assets/fonts never shipped any .woff2
+   files, so those names never resolved in any real build — the system-font
+   fallback below is what has actually been rendering all along, now declared
+   explicitly instead of hiding behind a font name that can never match. */
 
 /* ─── Light theme ───────────────────────────────────────────────────────── */
 :root {
@@ -56,8 +26,8 @@
   --nc-radius: 10px;
   --nc-radius-sm: 6px;
   --nc-radius-lg: 16px;
-  --nc-font: 'DM Sans', system-ui, sans-serif;
-  --nc-mono: 'DM Mono', 'Courier New', monospace;
+  --nc-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --nc-mono: 'Courier New', monospace;
   --nc-transition: 0.15s ease;
 }
 
