@@ -302,11 +302,21 @@ function runMigrations() {
     // indexes were on (…, timestamp) — so SQLite had to sort every row of the
     // conversation in a temp B-tree, materializing full rows (including any
     // inline base64) on every single chat load.
+    //
+    // rowid CANNOT be referenced in CREATE INDEX (unlike in ORDER BY, where
+    // it's a valid pseudo-column) — SQLite rejects it with "no such column:
+    // rowid" for any rowid table, regardless of primary key type. This threw
+    // synchronously on every v2.4.0 install, crashing app startup on both
+    // Windows and macOS before the window ever opened. The index below omits
+    // rowid: SQLite still uses it to seek by channel_id/private_chat_uuid and
+    // to satisfy the received_at ordering, falling back to an in-memory sort
+    // only for the (extremely rare) case of two messages in the same
+    // conversation sharing a millisecond timestamp.
     db.exec(`
       CREATE INDEX IF NOT EXISTS idx_messages_channel_recv
-        ON messages(channel_id, received_at DESC, rowid DESC);
+        ON messages(channel_id, received_at DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_private_recv
-        ON messages(private_chat_uuid, received_at DESC, rowid DESC);
+        ON messages(private_chat_uuid, received_at DESC);
     `);
     try { db.exec('ANALYZE'); } catch {}
     db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(7);
